@@ -1,0 +1,47 @@
+name: Daily Volume Spike Update & Notification
+
+on:
+  schedule:
+    # 毎日 JST 16:30 (UTC 7:30) に実行（平日のみ）
+    - cron: '30 7 * * 1-5'
+  workflow_dispatch:  # 手動実行も可能
+
+permissions:
+  contents: write
+
+jobs:
+  update-and-notify:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install yfinance pandas pytz gspread google-auth cryptography openpyxl xlrd
+
+      - name: Run data fetch script
+        run: |
+          python fetch_data.py
+
+      - name: Commit and push results
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/ratios.json
+          git diff --staged --quiet || git commit -m "📊 Update volume ratios $(TZ=Asia/Tokyo date +'%Y-%m-%d %H:%M')"
+          git push
+
+      - name: Send email notifications
+        env:
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          SPREADSHEET_URL: ${{ secrets.SPREADSHEET_URL }}
+          GSHEETS_CREDENTIALS: ${{ secrets.GSHEETS_CREDENTIALS }}
+        run: |
+          python send_notifications.py
