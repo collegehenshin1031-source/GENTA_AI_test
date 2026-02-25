@@ -3,6 +3,7 @@
 - ログイン機能（共通パスワード or 登録済みメールアドレス）
 - 出来高急動モニター（GitHub Actionsで自動更新）
 - 利用者ごとのメール通知機能（Google Sheets永続化）
+- チャート表示機能（ローソク足・出来高・価格帯別売買高）
 """
 
 import json
@@ -12,10 +13,16 @@ from email.mime.text import MIMEText
 from typing import Dict, List, Optional
 from pathlib import Path
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import base64
 import pandas as pd
+import numpy as np
+
+# チャート
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import yfinance as yf
 
 # Google Sheets連携
 from streamlit_gsheets import GSheetsConnection
@@ -358,6 +365,362 @@ p, span, label, div { color: #333; }
 
 
 # ==========================================
+# チャート関連関数
+# ==========================================
+@st.cache_data(ttl=300)
+def fetch_chart_data(ticker: str, period: str = "6mo") -> pd.DataFrame:
+    """チャート用の株価データを取得"""
+    try:
+        stock = yf.Ticker(ticker)
+        df = stock.history(period=period)
+        return df
+    except Exception as e:
+        st.error(f"データ取得エラー: {e}")
+        return pd.DataFrame()
+
+
+def calculate_volume_profile(df: pd.DataFrame, bins: int = 20) -> pd.DataFrame:
+    """価格帯別売買高を計算"""
+    if df.empty:
+        return pd.DataFrame()
+    
+    # 価格範囲を分割
+    price_min = df['Low'].min()
+    price_max = df['High'].max()
+    price_bins = np.linspace(price_min, price_max, bins + 1)
+    
+    volume_profile = []
+    
+    for i in range(len(price_bins) - 1):
+        bin_low = price_bins[i]
+        bin_high = price_bins[i + 1]
+        bin_center = (bin_low + bin_high) / 2
+        
+        # この価格帯に含まれる日の出来高を集計
+        total_volume = 0
+        for _, row in df.iterrows():
+            if row['Low'] <= bin_high and row['High'] >= bin_low:
+                # 出来高を価格帯に按分
+                overlap_low = max(row['Low'], bin_low)
+                overlap_high = min(row['High'], bin_high)
+                if row['High'] > row['Low']:
+                    ratio = (overlap_high - overlap_low) / (row['High'] - row['Low'])
+                else:
+                    ratio = 1.0
+                total_volume += row['Volume'] * ratio
+        
+        volume_profile.append({
+            'price': bin_center,
+            'price_low': bin_low,
+            'price_high': bin_high,
+            'volume': total_volume
+        })
+    
+    return pd.DataFrame(volume_profile)
+
+
+def calculate_support_resistance(df: pd.DataFrame, window: int = 20) -> tuple:
+    """上値抵抗線・下値支持線を計算"""
+    if df.empty or len(df) < window:
+        return [], []
+    
+    # 直近の高値・安値からトレンドラインを計算
+    recent_df = df.tail(window)
+    
+    # 高値のピーク（上値抵抗線用）
+    high_peaks = []
+    for i in range(2, len(recent_df) - 2):
+        if (recent_df['High'].iloc[i] > recent_df['High'].iloc[i-1] and 
+            recent_df['High'].iloc[i] > recent_df['High'].iloc[i-2] and
+            recent_df['High'].iloc[i] > recent_df['High'].iloc[i+1] and 
+            recent_df['High'].iloc[i] > recent_df['High'].iloc[i+2]):
+            high_peaks.append((recent_df.index[i], recent_df['High'].iloc[i]))
+    
+    # 安値のボトム（下値支持線用）
+    low_bottoms = []
+    for i in range(2, len(recent_df) - 2):
+        if (recent_df['Low'].iloc[i] < recent_df['Low'].iloc[i-1] and 
+            recent_df['Low'].iloc[i] < recent_df['Low'].iloc[i-2] and
+            recent_df['Low'].iloc[i] < recent_df['Low'].iloc[i+1] and 
+            recent_df['Low'].iloc[i] < recent_df['Low'].iloc[i+2]):
+            low_bottoms.append((recent_df.index[i], recent_df['Low'].iloc[i]))
+    
+    return high_peaks, low_bottoms
+
+
+def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 0) -> go.Figure:
+    """
+    ローソク足チャート・出来高・価格帯別売買高を作成
+    TradingView風の明るいデザイン
+    """
+    df = fetch_chart_data(ticker, period)
+    
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="データを取得できませんでした", 
+                          xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return fig
+    
+    # 出来高倍率を計算
+    if avg_volume > 0:
+        df['volume_ratio'] = df['Volume'] / avg_volume
+    else:
+        df['volume_ratio'] = 1.0
+    
+    # 2日連続1.5倍以上の日を判定
+    df['spike'] = False
+    df['spike_consecutive'] = False
+    for i in range(1, len(df)):
+        if df['volume_ratio'].iloc[i] >= RATIO_MEDIUM and df['volume_ratio'].iloc[i-1] >= RATIO_MEDIUM:
+            df.loc[df.index[i], 'spike_consecutive'] = True
+            df.loc[df.index[i-1], 'spike_consecutive'] = True
+        if df['volume_ratio'].iloc[i] >= RATIO_MEDIUM:
+            df.loc[df.index[i], 'spike'] = True
+    
+    # 価格帯別売買高を計算
+    volume_profile = calculate_volume_profile(df)
+    
+    # 抵抗線・支持線を計算
+    high_peaks, low_bottoms = calculate_support_resistance(df)
+    
+    # サブプロット作成（チャート、出来高、価格帯別売買高）
+    fig = make_subplots(
+        rows=2, cols=2,
+        column_widths=[0.85, 0.15],
+        row_heights=[0.7, 0.3],
+        specs=[[{"rowspan": 1}, {"rowspan": 2}],
+               [{"rowspan": 1}, None]],
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        horizontal_spacing=0.02
+    )
+    
+    # ===== ローソク足チャート =====
+    fig.add_trace(
+        go.Candlestick(
+            x=df.index,
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            increasing_line_color='#26A69A',  # 緑（上昇）
+            decreasing_line_color='#EF5350',  # 赤（下落）
+            increasing_fillcolor='#26A69A',
+            decreasing_fillcolor='#EF5350',
+            name='価格'
+        ),
+        row=1, col=1
+    )
+    
+    # 上値抵抗線
+    if len(high_peaks) >= 2:
+        resistance_price = max([p[1] for p in high_peaks[-2:]])
+        fig.add_hline(
+            y=resistance_price, 
+            line_dash="dash", 
+            line_color="#EF5350",
+            line_width=1.5,
+            annotation_text=f"上値抵抗 ¥{resistance_price:,.0f}",
+            annotation_position="top right",
+            annotation_font_size=10,
+            annotation_font_color="#EF5350",
+            row=1, col=1
+        )
+    
+    # 下値支持線
+    if len(low_bottoms) >= 2:
+        support_price = min([p[1] for p in low_bottoms[-2:]])
+        fig.add_hline(
+            y=support_price, 
+            line_dash="dash", 
+            line_color="#2196F3",
+            line_width=1.5,
+            annotation_text=f"下値支持 ¥{support_price:,.0f}",
+            annotation_position="bottom right",
+            annotation_font_size=10,
+            annotation_font_color="#2196F3",
+            row=1, col=1
+        )
+    
+    # ===== 出来高バー =====
+    colors = []
+    for i, row in df.iterrows():
+        if row['spike_consecutive']:
+            colors.append('#EF5350')  # 赤（2日連続1.5倍超）
+        elif row['spike']:
+            colors.append('#FF9800')  # オレンジ（1.5倍超）
+        else:
+            colors.append('#B0BEC5')  # グレー（通常）
+    
+    fig.add_trace(
+        go.Bar(
+            x=df.index,
+            y=df['Volume'],
+            marker_color=colors,
+            name='出来高',
+            opacity=0.8
+        ),
+        row=2, col=1
+    )
+    
+    # 2日連続スパイクの日に点線を追加
+    for i, (idx, row) in enumerate(df.iterrows()):
+        if row['spike_consecutive']:
+            # 出来高バーからローソク足に点線を引く
+            fig.add_shape(
+                type="line",
+                x0=idx, x1=idx,
+                y0=0, y1=1,
+                yref="paper",
+                line=dict(color="#EF5350", width=1, dash="dot"),
+                opacity=0.5
+            )
+    
+    # ===== 価格帯別売買高（横棒グラフ） =====
+    if not volume_profile.empty:
+        max_vol = volume_profile['volume'].max()
+        fig.add_trace(
+            go.Bar(
+                y=volume_profile['price'],
+                x=volume_profile['volume'],
+                orientation='h',
+                marker_color='#7E57C2',
+                opacity=0.6,
+                name='価格帯別売買高'
+            ),
+            row=1, col=2
+        )
+    
+    # ===== レイアウト設定（TradingView風・明るいテーマ） =====
+    fig.update_layout(
+        title=dict(
+            text=f"📈 {ticker} {name}",
+            font=dict(size=18, color='#333333'),
+            x=0.5
+        ),
+        height=600,
+        showlegend=False,
+        paper_bgcolor='#FFFFFF',
+        plot_bgcolor='#FAFAFA',
+        font=dict(family="Arial, sans-serif", size=12, color='#333333'),
+        margin=dict(l=60, r=20, t=60, b=40),
+        xaxis_rangeslider_visible=False,
+    )
+    
+    # X軸設定
+    fig.update_xaxes(
+        gridcolor='#E0E0E0',
+        showgrid=True,
+        zeroline=False,
+        row=1, col=1
+    )
+    fig.update_xaxes(
+        gridcolor='#E0E0E0',
+        showgrid=True,
+        zeroline=False,
+        row=2, col=1
+    )
+    
+    # Y軸設定
+    fig.update_yaxes(
+        title_text="株価 (円)",
+        gridcolor='#E0E0E0',
+        showgrid=True,
+        zeroline=False,
+        side='right',
+        row=1, col=1
+    )
+    fig.update_yaxes(
+        title_text="出来高",
+        gridcolor='#E0E0E0',
+        showgrid=True,
+        zeroline=False,
+        row=2, col=1
+    )
+    fig.update_yaxes(
+        showticklabels=False,
+        row=1, col=2
+    )
+    fig.update_xaxes(
+        showticklabels=False,
+        row=1, col=2
+    )
+    
+    return fig
+
+
+def show_chart_modal(ticker: str, stock_info: dict):
+    """チャートモーダルを表示"""
+    name = stock_info.get("name", ticker)
+    avg_volume = stock_info.get("avg_volume", 0)
+    
+    # 戻るボタン
+    if st.button("← 一覧に戻る", key="back_btn"):
+        st.session_state["show_chart"] = False
+        st.session_state["selected_ticker"] = None
+        st.rerun()
+    
+    st.markdown("---")
+    
+    # 期間選択
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        if st.button("1ヶ月", use_container_width=True, key="1mo"):
+            st.session_state["chart_period"] = "1mo"
+    with col2:
+        if st.button("3ヶ月", use_container_width=True, key="3mo"):
+            st.session_state["chart_period"] = "3mo"
+    with col3:
+        if st.button("6ヶ月", use_container_width=True, key="6mo"):
+            st.session_state["chart_period"] = "6mo"
+    with col4:
+        if st.button("1年", use_container_width=True, key="1y"):
+            st.session_state["chart_period"] = "1y"
+    
+    period = st.session_state.get("chart_period", "6mo")
+    
+    # 銘柄情報表示
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                border-radius: 12px; padding: 1rem; margin: 1rem 0; color: white;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <span style="font-size: 1.5rem; font-weight: bold;">{ticker}</span>
+                <span style="font-size: 1.2rem; margin-left: 0.5rem;">{name}</span>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 1.8rem; font-weight: bold;">¥{stock_info.get('price', 0):,.0f}</div>
+                <div style="font-size: 0.9rem;">
+                    出来高倍率: <span style="font-weight: bold;">{stock_info.get('ratio', 0)}倍</span>
+                    {' (昨日: ' + str(stock_info.get('ratio_yesterday', '-')) + '倍)' if stock_info.get('ratio_yesterday') else ''}
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # チャート表示
+    with st.spinner("チャートを読み込み中..."):
+        fig = create_chart(ticker, name, period, avg_volume)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # 凡例
+    st.markdown("""
+    <div style="background: #F5F5F5; border-radius: 8px; padding: 0.8rem; font-size: 0.8rem; color: #666;">
+        <strong>📊 チャートの見方</strong><br>
+        <span style="color: #26A69A;">■</span> 陽線（上昇）
+        <span style="color: #EF5350; margin-left: 1rem;">■</span> 陰線（下落）
+        <span style="color: #EF5350; margin-left: 1rem;">■</span> 出来高：2日連続1.5倍超
+        <span style="color: #FF9800; margin-left: 1rem;">■</span> 出来高：1.5倍超
+        <span style="color: #B0BEC5; margin-left: 1rem;">■</span> 出来高：通常<br>
+        <span style="color: #EF5350;">---</span> 上値抵抗線
+        <span style="color: #2196F3; margin-left: 1rem;">---</span> 下値支持線
+        <span style="color: #7E57C2; margin-left: 1rem;">■</span> 価格帯別売買高
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ==========================================
 # ロゴ画像を読み込み
 # ==========================================
 def get_logo_base64():
@@ -616,6 +979,10 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
         else:
             cap_badge = '<span class="cap-badge out">範囲外</span>'
     
+    # 昨日の倍率表示（あれば）
+    ratio_yesterday = d.get('ratio_yesterday', None)
+    ratio_yesterday_html = f'<span style="font-size:0.7rem;color:#888;margin-left:4px;">(昨日:{ratio_yesterday}x)</span>' if ratio_yesterday else ''
+    
     st.markdown(f"""
     <div class="spike-card {card_class}">
         <div class="card-header">
@@ -623,7 +990,7 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
                 <a href="{url}" target="_blank">{ticker}</a>
                 <span style="font-size:0.75rem;color:#888;margin-left:6px;">{str(name_jp)[:12]}</span>
             </div>
-            <div class="ratio-badge {ratio_class}">{ratio}x</div>
+            <div class="ratio-badge {ratio_class}">{ratio}x{ratio_yesterday_html}</div>
         </div>
         <div class="card-body">
             <div><span class="info-label">現在値</span><br><span class="info-value" style="color:#C41E3A;font-weight:600;">¥{d['price']:,.0f}</span></div>
@@ -633,6 +1000,13 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
         </div>
     </div>
     """, unsafe_allow_html=True)
+    
+    # チャート表示ボタン
+    if st.button(f"📊 チャートを見る", key=f"chart_{ticker}", use_container_width=True):
+        st.session_state["show_chart"] = True
+        st.session_state["selected_ticker"] = ticker
+        st.session_state["selected_stock_info"] = d
+        st.rerun()
 
 
 # ==========================================
@@ -735,6 +1109,14 @@ def show_login_page():
 # ==========================================
 def show_main_page():
     """メインアプリ画面を表示"""
+    
+    # チャート表示モードの場合
+    if st.session_state.get("show_chart") and st.session_state.get("selected_ticker"):
+        ticker = st.session_state["selected_ticker"]
+        stock_info = st.session_state.get("selected_stock_info", {})
+        show_chart_modal(ticker, stock_info)
+        return
+    
     logo_base64 = get_logo_base64()
     
     # ヘッダー表示
@@ -780,10 +1162,22 @@ def show_main_page():
     with tab1:
         if data:
             updated_at = data.get("updated_at", "不明")
+            filter_desc = data.get("filter_description", "")
+            
             st.markdown(f"""
             <div class="update-info">
                 📡 最終更新: <strong>{updated_at}</strong><br>
                 <span style="font-size:0.7rem;color:#666;">平日 16:30頃 に自動更新（土日祝は更新なし）</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 新フィルター条件の説明
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                        border-radius: 10px; padding: 0.8rem; margin-bottom: 1rem; color: white; font-size: 0.8rem;">
+                <strong>🎯 厳選フィルター適用中</strong><br>
+                ① 過去100日間、出来高が1.5倍以内で静かだった銘柄<br>
+                ② 直近2日連続で1.5倍を突破した銘柄のみ表示
             </div>
             """, unsafe_allow_html=True)
             
@@ -796,7 +1190,7 @@ def show_main_page():
             """, unsafe_allow_html=True)
             
             # フィルター切替
-            show_all = st.checkbox("全銘柄を表示（時価総額フィルターOFF）", value=False)
+            show_all = st.checkbox("従来のフィルター表示（時価総額のみ）", value=False)
             
             if show_all:
                 display_data = data.get("all_data", {})
@@ -959,6 +1353,12 @@ if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "login_error" not in st.session_state:
     st.session_state["login_error"] = False
+if "show_chart" not in st.session_state:
+    st.session_state["show_chart"] = False
+if "selected_ticker" not in st.session_state:
+    st.session_state["selected_ticker"] = None
+if "chart_period" not in st.session_state:
+    st.session_state["chart_period"] = "6mo"
 
 # ページ表示
 if st.session_state.get("logged_in"):
