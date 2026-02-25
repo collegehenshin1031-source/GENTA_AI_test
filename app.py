@@ -547,19 +547,20 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
     colors = []
     for i, row in df.iterrows():
         if row['spike_consecutive']:
-            colors.append('#EF5350')  # 赤（2日連続1.5倍超）
+            colors.append('#E53935')  # より濃い赤（2日連続1.5倍超）
         elif row['spike']:
-            colors.append('#FF9800')  # オレンジ（1.5倍超）
+            colors.append('#FF7043')  # より濃いオレンジ（1.5倍超）
         else:
-            colors.append('#B0BEC5')  # グレー（通常）
+            colors.append('#90A4AE')  # やや濃いグレー（通常）
     
     fig.add_trace(
         go.Bar(
             x=df.index,
             y=df['Volume'],
             marker_color=colors,
+            marker_line_width=0,
             name='出来高',
-            opacity=0.8
+            opacity=0.9  # 少し濃く
         ),
         row=2, col=1
     )
@@ -573,20 +574,30 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
                 x0=idx, x1=idx,
                 y0=0, y1=1,
                 yref="paper",
-                line=dict(color="#EF5350", width=1, dash="dot"),
-                opacity=0.5
+                line=dict(color="#E53935", width=1.5, dash="dot"),
+                opacity=0.6
             )
     
     # ===== 価格帯別売買高（横棒グラフ） =====
     if not volume_profile.empty:
         max_vol = volume_profile['volume'].max()
+        # ボリュームに応じてグラデーション色を設定
+        vp_colors = []
+        for _, row in volume_profile.iterrows():
+            intensity = row['volume'] / max_vol if max_vol > 0 else 0
+            # 薄い青→濃い紫のグラデーション
+            r = int(126 + (63 - 126) * intensity)
+            g = int(87 + (81 - 87) * intensity)
+            b = int(194 + (181 - 194) * intensity)
+            vp_colors.append(f'rgba({r}, {g}, {b}, 0.7)')
+        
         fig.add_trace(
             go.Bar(
                 y=volume_profile['price'],
                 x=volume_profile['volume'],
                 orientation='h',
-                marker_color='#7E57C2',
-                opacity=0.6,
+                marker_color=vp_colors,
+                marker_line_width=0,
                 name='価格帯別売買高'
             ),
             row=1, col=2
@@ -604,42 +615,60 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         xaxis_rangeslider_visible=False,
     )
     
-    # X軸設定
-    fig.update_xaxes(
-        gridcolor='#E0E0E0',
-        showgrid=True,
-        zeroline=False,
-        row=1, col=1
-    )
-    fig.update_xaxes(
-        gridcolor='#E0E0E0',
-        showgrid=True,
-        zeroline=False,
-        row=2, col=1
-    )
-    
-    # Y軸設定
+    # ===== ローソク足エリア（明るいクリーム系） =====
     fig.update_yaxes(
-        title_text="株価 (円)",
-        gridcolor='#E0E0E0',
+        title_text="",
+        gridcolor='#E8E8E8',
         showgrid=True,
         zeroline=False,
         side='right',
+        tickfont=dict(size=10),
         row=1, col=1
     )
-    fig.update_yaxes(
-        title_text="出来高",
-        gridcolor='#E0E0E0',
+    fig.update_xaxes(
+        gridcolor='#E8E8E8',
         showgrid=True,
         zeroline=False,
+        showticklabels=False,
+        row=1, col=1
+    )
+    
+    # ===== 出来高エリア（グレー系で差別化） =====
+    fig.update_yaxes(
+        title_text="",
+        gridcolor='#D0D0D0',
+        showgrid=True,
+        zeroline=False,
+        tickfont=dict(size=9),
         row=2, col=1
     )
+    fig.update_xaxes(
+        gridcolor='#D0D0D0',
+        showgrid=True,
+        zeroline=False,
+        tickfont=dict(size=9),
+        row=2, col=1
+    )
+    
+    # 出来高エリアの背景色を変更
+    fig.add_shape(
+        type="rect",
+        xref="paper", yref="paper",
+        x0=0, y0=0, x1=0.88, y1=0.35,
+        fillcolor="rgba(240, 244, 248, 0.8)",  # 薄いブルーグレー
+        line=dict(width=0),
+        layer="below"
+    )
+    
+    # 価格帯別売買高エリア
     fig.update_yaxes(
         showticklabels=False,
+        showgrid=False,
         row=1, col=2
     )
     fig.update_xaxes(
         showticklabels=False,
+        showgrid=False,
         row=1, col=2
     )
     
