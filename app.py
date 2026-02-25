@@ -484,14 +484,15 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
     high_peaks, low_bottoms = calculate_support_resistance(df)
     
     # サブプロット作成（チャート、出来高、価格帯別売買高）
+    # スマホ対応で価格帯別売買高の幅を調整
     fig = make_subplots(
         rows=2, cols=2,
-        column_widths=[0.85, 0.15],
-        row_heights=[0.7, 0.3],
+        column_widths=[0.88, 0.12],  # 価格帯別売買高を狭く
+        row_heights=[0.65, 0.35],    # 出来高エリアを少し広く
         specs=[[{"rowspan": 1}, {"rowspan": 2}],
                [{"rowspan": 1}, None]],
         shared_xaxes=True,
-        vertical_spacing=0.03,
+        vertical_spacing=0.05,
         horizontal_spacing=0.02
     )
     
@@ -591,19 +592,15 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
             row=1, col=2
         )
     
-    # ===== レイアウト設定（TradingView風・明るいテーマ） =====
+    # ===== レイアウト設定（TradingView風・明るいテーマ・スマホ対応） =====
     fig.update_layout(
-        title=dict(
-            text=f"📈 {ticker} {name}",
-            font=dict(size=18, color='#333333'),
-            x=0.5
-        ),
-        height=600,
+        title=None,  # タイトルは別途HTML表示するので削除
+        height=500,  # スマホでも見やすい高さ
         showlegend=False,
         paper_bgcolor='#FFFFFF',
         plot_bgcolor='#FAFAFA',
-        font=dict(family="Arial, sans-serif", size=12, color='#333333'),
-        margin=dict(l=60, r=20, t=60, b=40),
+        font=dict(family="Arial, sans-serif", size=11, color='#333333'),
+        margin=dict(l=10, r=10, t=30, b=30),  # マージンを小さく
         xaxis_rangeslider_visible=False,
     )
     
@@ -650,7 +647,7 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
 
 
 def show_chart_modal(ticker: str, stock_info: dict):
-    """チャートモーダルを表示"""
+    """チャートモーダルを表示（スマホ対応）"""
     name = stock_info.get("name", ticker)
     avg_volume = stock_info.get("avg_volume", 0)
     
@@ -662,38 +659,40 @@ def show_chart_modal(ticker: str, stock_info: dict):
     
     st.markdown("---")
     
-    # 期間選択
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        if st.button("1ヶ月", use_container_width=True, key="1mo"):
-            st.session_state["chart_period"] = "1mo"
-    with col2:
-        if st.button("3ヶ月", use_container_width=True, key="3mo"):
-            st.session_state["chart_period"] = "3mo"
-    with col3:
-        if st.button("6ヶ月", use_container_width=True, key="6mo"):
-            st.session_state["chart_period"] = "6mo"
-    with col4:
-        if st.button("1年", use_container_width=True, key="1y"):
-            st.session_state["chart_period"] = "1y"
+    # 期間選択（スマホ対応で横並び）
+    period_cols = st.columns(4)
+    periods = [("1ヶ月", "1mo"), ("3ヶ月", "3mo"), ("6ヶ月", "6mo"), ("1年", "1y")]
+    for i, (label, period_val) in enumerate(periods):
+        with period_cols[i]:
+            if st.button(label, use_container_width=True, key=f"period_{period_val}"):
+                st.session_state["chart_period"] = period_val
+                st.rerun()
     
     period = st.session_state.get("chart_period", "6mo")
     
-    # 銘柄情報表示
+    # 現在選択中の期間をハイライト
+    period_labels = {"1mo": "1ヶ月", "3mo": "3ヶ月", "6mo": "6ヶ月", "1y": "1年"}
+    
+    # 昨日の倍率
+    ratio_yesterday = stock_info.get('ratio_yesterday')
+    ratio_yesterday_text = f"（昨日: {ratio_yesterday}倍）" if ratio_yesterday else ""
+    
+    # 銘柄情報表示（スマホ対応）
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                 border-radius: 12px; padding: 1rem; margin: 1rem 0; color: white;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <span style="font-size: 1.5rem; font-weight: bold;">{ticker}</span>
-                <span style="font-size: 1.2rem; margin-left: 0.5rem;">{name}</span>
+        <div style="text-align: center;">
+            <div style="font-size: 1.3rem; font-weight: bold; margin-bottom: 0.3rem;">
+                {ticker} {name}
             </div>
-            <div style="text-align: right;">
-                <div style="font-size: 1.8rem; font-weight: bold;">¥{stock_info.get('price', 0):,.0f}</div>
-                <div style="font-size: 0.9rem;">
-                    出来高倍率: <span style="font-weight: bold;">{stock_info.get('ratio', 0)}倍</span>
-                    {' (昨日: ' + str(stock_info.get('ratio_yesterday', '-')) + '倍)' if stock_info.get('ratio_yesterday') else ''}
-                </div>
+            <div style="font-size: 2rem; font-weight: bold;">
+                ¥{stock_info.get('price', 0):,.0f}
+            </div>
+            <div style="font-size: 0.9rem; margin-top: 0.3rem;">
+                出来高倍率: <strong>{stock_info.get('ratio', 0)}倍</strong> {ratio_yesterday_text}
+            </div>
+            <div style="font-size: 0.8rem; margin-top: 0.2rem; opacity: 0.9;">
+                期間: {period_labels.get(period, '6ヶ月')}
             </div>
         </div>
     </div>
@@ -702,20 +701,20 @@ def show_chart_modal(ticker: str, stock_info: dict):
     # チャート表示
     with st.spinner("チャートを読み込み中..."):
         fig = create_chart(ticker, name, period, avg_volume)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     
-    # 凡例
+    # 凡例（スマホ対応で折り返し）
     st.markdown("""
-    <div style="background: #F5F5F5; border-radius: 8px; padding: 0.8rem; font-size: 0.8rem; color: #666;">
+    <div style="background: #F5F5F5; border-radius: 8px; padding: 0.8rem; font-size: 0.75rem; color: #666; line-height: 1.8;">
         <strong>📊 チャートの見方</strong><br>
-        <span style="color: #26A69A;">■</span> 陽線（上昇）
-        <span style="color: #EF5350; margin-left: 1rem;">■</span> 陰線（下落）
-        <span style="color: #EF5350; margin-left: 1rem;">■</span> 出来高：2日連続1.5倍超
-        <span style="color: #FF9800; margin-left: 1rem;">■</span> 出来高：1.5倍超
-        <span style="color: #B0BEC5; margin-left: 1rem;">■</span> 出来高：通常<br>
-        <span style="color: #EF5350;">---</span> 上値抵抗線
-        <span style="color: #2196F3; margin-left: 1rem;">---</span> 下値支持線
-        <span style="color: #7E57C2; margin-left: 1rem;">■</span> 価格帯別売買高
+        <span style="color: #26A69A;">■</span> 陽線（上昇）　
+        <span style="color: #EF5350;">■</span> 陰線（下落）<br>
+        <span style="color: #EF5350;">■</span> 出来高2日連続1.5倍超　
+        <span style="color: #FF9800;">■</span> 出来高1.5倍超　
+        <span style="color: #B0BEC5;">■</span> 通常<br>
+        <span style="color: #EF5350;">- - -</span> 上値抵抗線　
+        <span style="color: #2196F3;">- - -</span> 下値支持線　
+        <span style="color: #7E57C2;">■</span> 価格帯別売買高
     </div>
     """, unsafe_allow_html=True)
 
