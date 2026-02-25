@@ -1063,9 +1063,20 @@ def get_japanese_name(ticker: str, api_name: str = None) -> str:
 
 
 def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> dict:
-    """銘柄の出来高データを取得"""
+    """
+    銘柄の出来高データを取得
+    
+    新フィルタリング条件:
+    1. 過去100日間（直近2日を除く）で出来高が常に1.5倍以内（静かだった）
+    2. 直近2日連続で1.5倍を超えている
+    """
     results = {}
+    qualified = {}  # 新条件を満たす銘柄
     total = len(tickers)
+    
+    # 過去100日チェック用の日数設定
+    QUIET_PERIOD = 100  # 過去100日間
+    CONSECUTIVE_DAYS = 2  # 連続日数
     
     for i in range(0, total, chunk_size):
         chunk = tickers[i:i + chunk_size]
@@ -1096,12 +1107,36 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> dict:
                     vol_series = vol_series.dropna()
                     close_series = close_series.dropna()
                     
-                    if len(vol_series) < 20:
+                    # 最低限のデータが必要（100日+2日+平均計算用）
+                    if len(vol_series) < QUIET_PERIOD + CONSECUTIVE_DAYS + 20:
                         continue
                     
-                    latest_volume = int(vol_series.iloc[-1])
+                    # 252日平均出来高を計算
                     avg_volume = int(vol_series.tail(LOOKBACK_DAYS).mean())
-                    ratio = round(latest_volume / avg_volume, 2) if avg_volume > 0 else 0
+                    if avg_volume <= 0:
+                        continue
+                    
+                    # 日次の出来高倍率を計算
+                    daily_ratios = vol_series / avg_volume
+                    
+                    # === 新フィルタリング条件 ===
+                    
+                    # 条件1: 過去100日間（直近2日を除く）で1.5倍以内
+                    # 直近2日を除いた、その前100日間をチェック
+                    past_100_ratios = daily_ratios.iloc[-(QUIET_PERIOD + CONSECUTIVE_DAYS):-CONSECUTIVE_DAYS]
+                    was_quiet = (past_100_ratios < RATIO_MEDIUM).all()
+                    
+                    # 条件2: 直近2日連続で1.5倍以上
+                    last_2_ratios = daily_ratios.iloc[-CONSECUTIVE_DAYS:]
+                    consecutive_spike = (last_2_ratios >= RATIO_MEDIUM).all()
+                    
+                    # 両条件を満たすか
+                    meets_new_criteria = was_quiet and consecutive_spike
+                    
+                    # === 基本データ取得 ===
+                    latest_volume = int(vol_series.iloc[-1])
+                    ratio = round(latest_volume / avg_volume, 2)
+                    ratio_yesterday = round(float(daily_ratios.iloc[-2]), 2)
                     latest_price = float(close_series.iloc[-1]) if len(close_series) > 0 else 0
                     
                     # 時価総額を取得
@@ -1123,21 +1158,31 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> dict:
                     # 時価総額フィルター
                     in_range = MARKET_CAP_MIN <= market_cap_oku <= MARKET_CAP_MAX
                     
-                    results[ticker] = {
+                    # 結果を格納
+                    result_data = {
                         "name": name,
                         "volume": latest_volume,
                         "avg_volume": avg_volume,
                         "ratio": ratio,
+                        "ratio_yesterday": ratio_yesterday,
                         "price": round(latest_price, 1),
                         "market_cap_oku": int(market_cap_oku),
                         "in_cap_range": in_range,
+                        "was_quiet": was_quiet,
+                        "consecutive_spike": consecutive_spike,
+                        "meets_criteria": meets_new_criteria,
                     }
                     
-                    status = "✅" if in_range else "⚠️範囲外"
-                    if ratio >= RATIO_HIGH:
-                        print(f"  🔴 {ticker} {name}: {ratio}倍, {market_cap_oku:.0f}億円 {status}")
+                    results[ticker] = result_data
+                    
+                    # 新条件を満たす銘柄を別途記録
+                    if meets_new_criteria and in_range:
+                        qualified[ticker] = result_data
+                        print(f"  🎯 {ticker} {name}: 今日{ratio}倍, 昨日{ratio_yesterday}倍, {market_cap_oku:.0f}億円 ← 条件クリア！")
+                    elif ratio >= RATIO_HIGH:
+                        print(f"  🔴 {ticker} {name}: {ratio}倍, {market_cap_oku:.0f}億円 (条件外)")
                     elif ratio >= RATIO_MEDIUM:
-                        print(f"  🟠 {ticker} {name}: {ratio}倍, {market_cap_oku:.0f}億円 {status}")
+                        print(f"  🟠 {ticker} {name}: {ratio}倍, {market_cap_oku:.0f}億円 (条件外)")
                     
                 except Exception as e:
                     continue
@@ -1148,12 +1193,16 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> dict:
         # API制限対策
         time.sleep(0.3)
     
-    return results
+    return results, qualified
 
 
 def main():
     print("=" * 60)
-    print("📊 出来高急動検知 - 中型株スキャン")
+    print("📊 出来高急動検知 - 中型株スキャン（新条件版）")
+    print("=" * 60)
+    print("🎯 新条件:")
+    print("  1. 過去100日間、出来高が1.5倍以内で推移（静かだった）")
+    print("  2. 直近2日連続で1.5倍以上を突破")
     print("=" * 60)
     
     now_jst = datetime.now(JST)
@@ -1163,32 +1212,38 @@ def main():
     print(f"📋 監視銘柄数: {len(MIDCAP_TICKERS)}")
     
     # 出来高データを取得
-    results = fetch_volume_data(MIDCAP_TICKERS)
+    results, qualified = fetch_volume_data(MIDCAP_TICKERS)
     print(f"\n✅ データ取得成功: {len(results)}銘柄")
     
-    # フィルター通過銘柄
+    # 時価総額フィルター通過銘柄（旧条件）
     filtered = {k: v for k, v in results.items() if v.get("in_cap_range", False)}
     print(f"✅ 時価総額フィルター通過: {len(filtered)}銘柄")
     
-    # ソート
+    # 新条件を満たす銘柄
+    print(f"🎯 新条件クリア（静か→2日連続急動）: {len(qualified)}銘柄")
+    
+    # ソート（出来高倍率の高い順）
+    sorted_qualified = dict(sorted(qualified.items(), key=lambda x: x[1]["ratio"], reverse=True))
     sorted_filtered = dict(sorted(filtered.items(), key=lambda x: x[1]["ratio"], reverse=True))
     sorted_all = dict(sorted(results.items(), key=lambda x: x[1]["ratio"], reverse=True))
     
-    # 統計
-    spike_high = len([r for r in sorted_filtered.values() if r["ratio"] >= RATIO_HIGH])
-    spike_medium = len([r for r in sorted_filtered.values() if r["ratio"] >= RATIO_MEDIUM])
+    # 統計（新条件）
+    spike_high = len([r for r in sorted_qualified.values() if r["ratio"] >= RATIO_HIGH])
+    spike_medium = len([r for r in sorted_qualified.values() if r["ratio"] >= RATIO_MEDIUM])
     
     # 出力
     output = {
         "updated_at": updated_at,
         "date": now_jst.strftime("%Y-%m-%d"),
         "market_cap_range": f"{MARKET_CAP_MIN}億〜{MARKET_CAP_MAX}億円",
-        "total_count": len(sorted_filtered),
+        "filter_description": "過去100日静か + 2日連続1.5倍超",
+        "total_count": len(sorted_qualified),
         "all_count": len(results),
+        "filtered_count": len(filtered),
         "spike_high_count": spike_high,
         "spike_medium_count": spike_medium,
-        "data": sorted_filtered,
-        "all_data": sorted_all,
+        "data": sorted_qualified,  # 新条件クリア銘柄（メイン表示）
+        "all_data": sorted_filtered,  # 従来の時価総額フィルターのみ通過銘柄（参考用）
     }
     
     os.makedirs("data", exist_ok=True)
@@ -1203,14 +1258,18 @@ def main():
     print("=" * 60)
     print(f"  監視銘柄数: {len(MIDCAP_TICKERS)}")
     print(f"  データ取得成功: {len(results)}銘柄")
-    print(f"  時価総額フィルター通過: {len(sorted_filtered)}銘柄")
+    print(f"  時価総額フィルター通過: {len(filtered)}銘柄")
+    print(f"  🎯 新条件クリア: {len(sorted_qualified)}銘柄")
     print(f"  🔴 3倍以上: {spike_high}銘柄")
     print(f"  🟠 1.5倍以上: {spike_medium}銘柄")
     
-    print("\n📈 上位10件（フィルター通過）:")
-    for ticker, info in list(sorted_filtered.items())[:10]:
-        marker = "🔴" if info["ratio"] >= 3.0 else ("🟠" if info["ratio"] >= 1.5 else "⚪")
-        print(f"  {marker} {ticker} {info['name']}: {info['ratio']}倍 | {info['market_cap_oku']}億円")
+    if sorted_qualified:
+        print("\n🎯 新条件クリア銘柄一覧:")
+        for ticker, info in sorted_qualified.items():
+            marker = "🔴" if info["ratio"] >= 3.0 else "🟠"
+            print(f"  {marker} {ticker} {info['name']}: 今日{info['ratio']}倍, 昨日{info['ratio_yesterday']}倍 | {info['market_cap_oku']}億円")
+    else:
+        print("\n📭 本日は新条件をクリアした銘柄はありませんでした")
 
 
 if __name__ == "__main__":
