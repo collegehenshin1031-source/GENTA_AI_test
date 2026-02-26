@@ -197,22 +197,37 @@ h1{
 
 /* Cards */
 .spike-card{
-  background: rgba(255,255,255,0.88);
+  position: relative;
+  background: rgba(255,255,255,0.92);
   backdrop-filter: blur(8px);
   border-radius: 16px;
   padding: 1rem;
   margin-bottom: .75rem;
-  border: 1px solid rgba(15,23,42,0.08);
-  box-shadow: 0 14px 40px rgba(15,23,42,0.08);
+  border: 1px solid rgba(15,23,42,0.12);
+  box-shadow: 0 14px 44px rgba(15,23,42,0.10);
+}
+.spike-card::before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:10px;
+  bottom:10px;
+  width:4px;
+  border-radius: 999px;
+  background: rgba(15,23,42,0.10);
 }
 .spike-card.high{
-  border-color: rgba(196,30,58,0.22);
-  box-shadow: 0 16px 44px rgba(196,30,58,0.12);
+  border-color: rgba(196,30,58,0.32);
+  box-shadow: 0 18px 52px rgba(196,30,58,0.14);
+  background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,245,247,0.92) 100%);
 }
+.spike-card.high::before{ background: linear-gradient(180deg, #C41E3A 0%, #E63946 100%); }
 .spike-card.medium{
-  border-color: rgba(255,152,0,0.22);
-  box-shadow: 0 16px 44px rgba(255,152,0,0.10);
+  border-color: rgba(255,152,0,0.32);
+  box-shadow: 0 18px 52px rgba(255,152,0,0.12);
+  background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,250,242,0.92) 100%);
 }
+.spike-card.medium::before{ background: linear-gradient(180deg, #FF9800 0%, #FFC107 100%); }
 
 .card-header{
   display:flex;
@@ -534,7 +549,7 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
     
     # ===== レイアウト設定 =====
     fig.update_layout(
-        title=None,
+        title_text="",
         height=500,
         showlegend=False,
         paper_bgcolor='#FFFFFF',
@@ -1008,6 +1023,7 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
     if st.button(toggle_label, key=f"chart_toggle_{ticker}", use_container_width=True):
         chart_open[ticker] = not is_open
         st.session_state["chart_open"] = chart_open
+        st.rerun()
 
     if chart_open.get(ticker, False):
         # 期間選択（見た目はピル、実体はボタン）
@@ -1082,7 +1098,7 @@ def show_login_page():
         )
         
         # ログインボタン
-        if st.button("ログイン", use_container_width=True):
+        if st.button("ログイン", use_container_width=True, type="primary"):
             # キャッシュをクリア（新しいセッションの開始）
             st.cache_data.clear()
             
@@ -1208,11 +1224,9 @@ def show_main_page():
                 <span style="font-size:0.7rem;color:#666;">平日 16:30頃 に自動更新（土日祝は更新なし）</span>
             </div>
             """, unsafe_allow_html=True)
-            
-            
-                        # LEVELガイド（邪魔しない表示）
+            # LEVELガイド（邪魔しない表示）
             guide_md = """
-**LEVELは“条件一致の多さ”を示す目安（1〜4）です。**
+**LEVELは“条件一致の多さ”を示す目安（1〜4）です。**  
 本ツールは市場データの可視化であり、銘柄推奨・売買助言ではありません。
 
 - **LEVEL 1**：条件に触れた（変化は小さい）
@@ -1223,7 +1237,6 @@ def show_main_page():
 **要監視**：取引量が増えているのに値動きが小さい等、状態が“目立つ”ときに表示されます（理由は複数あります）。
 """
 
-            # 画面を邪魔しないガイド（対応ブラウザはpopover、だめならexpander）
             try:
                 with st.popover("❓LEVEL", use_container_width=False):
                     st.markdown(guide_md)
@@ -1232,6 +1245,7 @@ def show_main_page():
                     st.markdown(guide_md)
 
             # 説明（中立表現）
+
             st.markdown("""
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                         border-radius: 10px; padding: 0.8rem; margin-bottom: 1rem; color: white; font-size: 0.8rem;">
