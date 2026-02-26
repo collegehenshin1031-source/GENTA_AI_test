@@ -1,14 +1,12 @@
 """
-HAGETAKA SCOPE - M&A候補検知スクリプト
-- GitHub Actionsで毎日16:30 JSTに自動実行
-- 時価総額300億〜2000億円の中型株を監視
-- FlowScore（吸収観測の強度）を計算
-- ステージ分類（仕込み/加速/匂い/発表待ち）
+HAGETAKA SCOPE - 日次候補抽出（GitHub Actions用）
 
-※中型株リストは事前に用意（API制限対策）
-※時価総額は取得時に再チェックし、範囲外は除外
-※銘柄名は日本語で表示
-※本ツールは市場データの可視化を目的とした補助ツールです
+- 目的：市場データの“状態”を可視化し、候補を少数に絞る
+- 本ツールは補助ツールであり、銘柄推奨・売買助言ではありません
+
+出力：data/ratios.json
+- data: 候補（フィルタ済み・並び替え済み）
+- all_data: 参考（時価総額フィルタ済み）
 """
 
 import json
@@ -22,12 +20,9 @@ import pandas as pd
 import pytz
 import yfinance as yf
 
-# ==========================================
-# 価格帯別売買高（6か月）から下値支持線を推定
-# ==========================================
 
 def calculate_volume_profile(df: pd.DataFrame, bins: int = 24) -> pd.DataFrame:
-    """価格帯別売買高を計算（簡易）"""
+    """価格帯別売買高（簡易）を計算（6か月足で使用）"""
     if df is None or df.empty:
         return pd.DataFrame()
 
@@ -36,19 +31,19 @@ def calculate_volume_profile(df: pd.DataFrame, bins: int = 24) -> pd.DataFrame:
     if not np.isfinite(price_min) or not np.isfinite(price_max) or price_max <= price_min:
         return pd.DataFrame()
 
-    price_bins = np.linspace(price_min, price_max, bins + 1)
-    rows = []
+    price_bins = np.linspace(price_min, price_max, int(bins) + 1)
 
+    volume_profile = []
     for i in range(len(price_bins) - 1):
         bin_low = float(price_bins[i])
         bin_high = float(price_bins[i + 1])
-        bin_center = (bin_low + bin_high) / 2
+        bin_center = (bin_low + bin_high) / 2.0
 
         total_volume = 0.0
-        for _, r in df.iterrows():
-            low = float(r['Low'])
-            high = float(r['High'])
-            vol = float(r['Volume'])
+        for _, row in df.iterrows():
+            low = float(row['Low'])
+            high = float(row['High'])
+            vol = float(row['Volume'])
             if low <= bin_high and high >= bin_low:
                 overlap_low = max(low, bin_low)
                 overlap_high = min(high, bin_high)
@@ -56,20 +51,20 @@ def calculate_volume_profile(df: pd.DataFrame, bins: int = 24) -> pd.DataFrame:
                     ratio = (overlap_high - overlap_low) / (high - low)
                 else:
                     ratio = 1.0
-                total_volume += vol * max(0.0, ratio)
+                total_volume += vol * ratio
 
-        rows.append({
+        volume_profile.append({
             'price': bin_center,
             'price_low': bin_low,
             'price_high': bin_high,
-            'volume': total_volume,
+            'volume': total_volume
         })
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(volume_profile)
 
 
 def compute_support_zone_from_profile(vp: pd.DataFrame, threshold_ratio: float = 0.60):
-    """高出来高ゾーン（POC周辺）を抽出し、下限を支持線として返す。
+    """高出来高ゾーン（POC周辺）を抽出し、その下限を下値ラインとして返す。
 
     返り値: (support_price, zone_upper_price)
     """
@@ -87,6 +82,7 @@ def compute_support_zone_from_profile(vp: pd.DataFrame, threshold_ratio: float =
         poc_pos = int(vp_reset['volume'].idxmax())
     except Exception:
         poc_pos = 0
+
     thr = max_vol * float(threshold_ratio)
 
     left = poc_pos
@@ -100,28 +96,40 @@ def compute_support_zone_from_profile(vp: pd.DataFrame, threshold_ratio: float =
     upper = float(vp_reset.loc[right, 'price_high'])
     return support, upper
 
+
+def support_position_tag(latest_price: float, support_price: float | None) -> tuple[str | None, float | None]:
+    """下値ラインからの位置（％）を計算し、中立的なタグ名を返す。
+    - 下値付近: +3%以内
+    - 上方乖離: +25%以上
+    """
+    if support_price is None or support_price <= 0:
+        return None, None
+    gap_pct = (latest_price / support_price - 1.0) * 100.0
+
+    if gap_pct <= 3.0:
+        return "下値付近", float(gap_pct)
+    if gap_pct >= 25.0:
+        return "上方乖離", float(gap_pct)
+    return None, float(gap_pct)
+
+
+
 # ==========================================
 # 設定
 # ==========================================
-LOOKBACK_DAYS = 252  # 1年分の営業日
+LOOKBACK_DAYS = 252
 JST = pytz.timezone("Asia/Tokyo")
 
 # 時価総額フィルター（億円）
-MARKET_CAP_MIN = 300   # 300億円以上
-MARKET_CAP_MAX = 2000  # 2000億円以下
+MARKET_CAP_MIN = 300
+MARKET_CAP_MAX = 2000
 
 # FlowScore閾値
-FLOW_SCORE_HIGH = 70    # 高い吸収観測
-FLOW_SCORE_MEDIUM = 40  # 中程度の吸収観測
-
-# ステージ定義
-STAGE_ACCUMULATION = "仕込み"   # Reorg高＋Flow出始め
-STAGE_ACCELERATION = "加速"     # Flow強（吸収が継続/強化）
-STAGE_SIGNAL = "匂い"           # Event加点が入り、近そう
-STAGE_WAITING = "発表待ち"      # Flow継続＋Event複数回
+FLOW_SCORE_HIGH = 70.0
+FLOW_SCORE_MEDIUM = 40.0
 
 # ==========================================
-# 日本語銘柄名辞書
+# 日本語銘柄名辞書（固定リスト）
 # ==========================================
 TICKER_NAMES = {
     # === 情報・通信・IT ===
@@ -239,7 +247,7 @@ TICKER_NAMES = {
     "6035.T": "IRジャパンホールディングス",
     "9479.T": "インプレスホールディングス",
     "9558.T": "ジャパニアス",
-    
+
     # === 半導体・電子部品 ===
     "3132.T": "マクニカホールディングス",
     "6146.T": "ディスコ",
@@ -318,7 +326,7 @@ TICKER_NAMES = {
     "6997.T": "日本ケミコン",
     "7735.T": "SCREENホールディングス",
     "7752.T": "リコー",
-    
+
     # === バイオ・ヘルスケア・医薬品 ===
     "2183.T": "リニカル",
     "2370.T": "メディネット",
@@ -368,7 +376,7 @@ TICKER_NAMES = {
     "4596.T": "窪田製薬ホールディングス",
     "4597.T": "ソレイジア・ファーマ",
     "4598.T": "Delta-Fly Pharma",
-    
+
     # === EC・サービス・人材 ===
     "2124.T": "JAC Recruitment",
     "2127.T": "日本M&Aセンターホールディングス",
@@ -420,7 +428,7 @@ TICKER_NAMES = {
     "3289.T": "東急不動産ホールディングス",
     "6560.T": "LTS",
     "7342.T": "ウェルスナビ",
-    
+
     # === ゲーム・エンタメ ===
     "3656.T": "KLab",
     "3659.T": "ネクソン",
@@ -454,7 +462,7 @@ TICKER_NAMES = {
     "3857.T": "ラック",
     "3858.T": "ユビキタスAI",
     "9166.T": "GENDA",
-    
+
     # === 建設・不動産 ===
     "1414.T": "ショーボンドホールディングス",
     "1417.T": "ミライト・ワン",
@@ -561,7 +569,7 @@ TICKER_NAMES = {
     "1980.T": "ダイダン",
     "1982.T": "日比谷総合設備",
     "1983.T": "東芝プラントシステム",
-    
+
     # === 食品・飲料 ===
     "2001.T": "ニップン",
     "2002.T": "日清製粉グループ本社",
@@ -638,7 +646,7 @@ TICKER_NAMES = {
     "2929.T": "ファーマフーズ",
     "2930.T": "北の達人コーポレーション",
     "2931.T": "ユーグレナ",
-    
+
     # === 機械・輸送機器 ===
     "6103.T": "オークマ",
     "6104.T": "芝浦機械",
@@ -765,7 +773,7 @@ TICKER_NAMES = {
     "7296.T": "エフ・シー・シー",
     "7309.T": "シマノ",
     "7313.T": "テイ・エス テック",
-    
+
     # === 銀行・金融・保険 ===
     "7186.T": "コンコルディア・フィナンシャルグループ",
     "7189.T": "西日本フィナンシャルホールディングス",
@@ -867,7 +875,7 @@ TICKER_NAMES = {
     "8750.T": "第一生命ホールディングス",
     "8766.T": "東京海上ホールディングス",
     "8795.T": "T&Dホールディングス",
-    
+
     # === 小売・卸売 ===
     "8012.T": "長瀬産業",
     "8015.T": "豊田通商",
@@ -937,7 +945,7 @@ TICKER_NAMES = {
     "8282.T": "ケーズホールディングス",
     "8283.T": "PALTAC",
     "8285.T": "三谷産業",
-    
+
     # === 不動産・REIT ===
     "8801.T": "三井不動産",
     "8802.T": "三菱地所",
@@ -963,7 +971,7 @@ TICKER_NAMES = {
     "8934.T": "サンフロンティア不動産",
     "8935.T": "FJネクストホールディングス",
     "8940.T": "インテリックス",
-    
+
     # === 運輸・倉庫 ===
     "9001.T": "東武鉄道",
     "9003.T": "相鉄ホールディングス",
@@ -1018,7 +1026,7 @@ TICKER_NAMES = {
     "9303.T": "住友倉庫",
     "9304.T": "澁澤倉庫",
     "9324.T": "安田倉庫",
-    
+
     # === 電気・ガス・エネルギー ===
     "9432.T": "日本電信電話",
     "9433.T": "KDDI",
@@ -1051,7 +1059,7 @@ TICKER_NAMES = {
     "9534.T": "北海道ガス",
     "9535.T": "広島ガス",
     "9536.T": "西部ガスホールディングス",
-    
+
     # === サービス・その他 ===
     "9603.T": "エイチ・アイ・エス",
     "9605.T": "東映",
@@ -1135,177 +1143,193 @@ TICKER_NAMES = {
     "9997.T": "ベルーナ",
 }
 
-# 監視対象の銘柄リスト
 MIDCAP_TICKERS = list(TICKER_NAMES.keys())
 
 
-def get_japanese_name(ticker: str, api_name: str = None) -> str:
-    """日本語の銘柄名を取得"""
+def get_japanese_name(ticker: str, api_name: str | None = None) -> str:
     if ticker in TICKER_NAMES:
         return TICKER_NAMES[ticker]
-    elif api_name:
+    if api_name:
         return api_name
-    else:
-        return ticker.replace(".T", "")
+    return ticker.replace(".T", "")
 
 
 def calculate_flow_score(df: pd.DataFrame) -> dict:
-    """
-    FlowScore（吸収観測の強度）を計算
-    
-    Components:
-    - vol_anomaly: 出来高の異常度（過去平均との乖離）
-    - price_stability: 価格の安定度（出来高増でも価格が動かない）
-    - absorption: 吸収度（出来高増加率 ÷ 価格変動率）
-    - range_compression: 値幅縮小度（ATRの低下）
-    - lower_shadow: 下ヒゲの強さ（下げ渋り）
-    
-    Returns:
-        dict: FlowScoreと各コンポーネント
-    """
+    """FlowScore（需給変化の強さ）を計算。"""
     if df.empty or len(df) < 20:
         return {
-            "flow_score": 0,
-            "vol_anomaly": 0,
-            "price_stability": 0,
-            "absorption": 0,
-            "range_compression": 0,
-            "lower_shadow": 0,
-            "state": "沈静"
+            "flow_score": 0.0,
+            "vol_anomaly": 0.0,
+            "price_stability": 0.0,
+            "absorption": 0.0,
+            "range_compression": 0.0,
+            "lower_shadow": 0.0,
         }
-    
+
+    recent_5 = df.tail(5)
+    recent_60 = df.tail(60) if len(df) >= 60 else df
+
     try:
-        # 直近データ
-        recent_5 = df.tail(5)
-        recent_20 = df.tail(20)
-        recent_60 = df.tail(60) if len(df) >= 60 else df
-        
-        # === 1. 出来高異常度 (vol_anomaly) ===
-        avg_vol_60 = recent_60['Volume'].mean()
-        avg_vol_5 = recent_5['Volume'].mean()
-        vol_anomaly = min(100, (avg_vol_5 / avg_vol_60 - 1) * 50) if avg_vol_60 > 0 else 0
-        vol_anomaly = max(0, vol_anomaly)
-        
-        # === 2. 価格安定度 (price_stability) ===
-        price_change_5 = abs(recent_5['Close'].iloc[-1] / recent_5['Close'].iloc[0] - 1) * 100
-        # 価格変動が小さいほどスコアが高い（最大5%の変動で0点）
-        price_stability = max(0, 100 - price_change_5 * 20)
-        
-        # === 3. 吸収度 (absorption) ===
-        vol_ratio = avg_vol_5 / avg_vol_60 if avg_vol_60 > 0 else 1
-        price_ratio = price_change_5 + 0.1  # ゼロ除算防止
-        absorption = min(100, (vol_ratio / price_ratio) * 30)
-        
-        # === 4. 値幅縮小度 (range_compression) ===
-        # ATR（Average True Range）の変化
+        # 1) 出来高異常
+        avg_vol_60 = float(recent_60["Volume"].mean())
+        avg_vol_5 = float(recent_5["Volume"].mean())
+        vol_anomaly = min(100.0, (avg_vol_5 / avg_vol_60 - 1) * 50.0) if avg_vol_60 > 0 else 0.0
+        vol_anomaly = max(0.0, vol_anomaly)
+
+        # 2) 価格安定度（5日）
+        price_change_5 = abs(float(recent_5["Close"].iloc[-1]) / float(recent_5["Close"].iloc[0]) - 1.0) * 100.0
+        price_stability = max(0.0, 100.0 - price_change_5 * 20.0)
+
+        # 3) 吸収度（出来高増加率 ÷ 価格変動）
+        vol_ratio = (avg_vol_5 / avg_vol_60) if avg_vol_60 > 0 else 1.0
+        price_ratio = price_change_5 + 0.1
+        absorption = min(100.0, (vol_ratio / price_ratio) * 30.0)
+
+        # 4) 値幅縮小（ATR近似）
         df_copy = df.copy()
-        df_copy['TR'] = np.maximum(
-            df_copy['High'] - df_copy['Low'],
+        df_copy["TR"] = np.maximum(
+            df_copy["High"] - df_copy["Low"],
             np.maximum(
-                abs(df_copy['High'] - df_copy['Close'].shift(1)),
-                abs(df_copy['Low'] - df_copy['Close'].shift(1))
-            )
+                (df_copy["High"] - df_copy["Close"].shift(1)).abs(),
+                (df_copy["Low"] - df_copy["Close"].shift(1)).abs(),
+            ),
         )
-        atr_20 = df_copy['TR'].tail(20).mean()
-        atr_5 = df_copy['TR'].tail(5).mean()
-        # ATRが縮小しているほどスコアが高い
-        range_compression = max(0, min(100, (1 - atr_5 / atr_20) * 100)) if atr_20 > 0 else 50
-        
-        # === 5. 下ヒゲの強さ (lower_shadow) ===
-        # 下ヒゲ = (Close - Low) / (High - Low) の平均
-        recent_5_copy = recent_5.copy()
-        body_range = recent_5_copy['High'] - recent_5_copy['Low']
-        lower_shadow_ratio = np.where(
-            body_range > 0,
-            (recent_5_copy['Close'] - recent_5_copy['Low']) / body_range,
-            0.5
-        )
-        lower_shadow = np.mean(lower_shadow_ratio) * 100
-        
-        # === FlowScore統合 ===
+        atr_20 = float(df_copy["TR"].tail(20).mean())
+        atr_5 = float(df_copy["TR"].tail(5).mean())
+        range_compression = max(0.0, min(100.0, (1.0 - atr_5 / atr_20) * 100.0)) if atr_20 > 0 else 50.0
+
+        # 5) 下ヒゲ
+        body_range = (recent_5["High"] - recent_5["Low"]).replace(0, np.nan)
+        lower_shadow_ratio = ((recent_5["Close"] - recent_5["Low"]) / body_range).fillna(0.5)
+        lower_shadow = float(lower_shadow_ratio.mean()) * 100.0
+
         flow_score = (
-            vol_anomaly * 0.30 +      # 出来高異常度
-            price_stability * 0.25 +   # 価格安定度
-            absorption * 0.25 +        # 吸収度
-            range_compression * 0.10 + # 値幅縮小度
-            lower_shadow * 0.10        # 下ヒゲの強さ
+            vol_anomaly * 0.30 +
+            price_stability * 0.25 +
+            absorption * 0.25 +
+            range_compression * 0.10 +
+            lower_shadow * 0.10
         )
-        flow_score = min(100, max(0, flow_score))
-        
-        # === 状態判定 ===
-        if vol_anomaly > 50 and price_stability > 60:
-            state = "吸収"
-        elif vol_anomaly > 50 and price_stability < 40:
-            state = "拡散"
-        elif vol_anomaly < 20:
-            state = "沈静"
-        else:
-            state = "観測中"
-        
+        flow_score = float(min(100.0, max(0.0, flow_score)))
+
         return {
             "flow_score": round(flow_score, 1),
-            "vol_anomaly": round(vol_anomaly, 1),
-            "price_stability": round(price_stability, 1),
-            "absorption": round(absorption, 1),
-            "range_compression": round(range_compression, 1),
-            "lower_shadow": round(lower_shadow, 1),
-            "state": state
+            "vol_anomaly": round(float(vol_anomaly), 1),
+            "price_stability": round(float(price_stability), 1),
+            "absorption": round(float(absorption), 1),
+            "range_compression": round(float(range_compression), 1),
+            "lower_shadow": round(float(lower_shadow), 1),
         }
-        
     except Exception as e:
         print(f"    FlowScore計算エラー: {e}")
         return {
-            "flow_score": 0,
-            "vol_anomaly": 0,
-            "price_stability": 0,
-            "absorption": 0,
-            "range_compression": 0,
-            "lower_shadow": 0,
-            "state": "エラー"
+            "flow_score": 0.0,
+            "vol_anomaly": 0.0,
+            "price_stability": 0.0,
+            "absorption": 0.0,
+            "range_compression": 0.0,
+            "lower_shadow": 0.0,
         }
 
 
-def determine_stage(flow_score: float, flow_data: dict, consecutive_days: int = 0) -> str:
-    """
-    ステージを判定
-    
-    Args:
-        flow_score: FlowScore
-        flow_data: FlowScoreの詳細データ
-        consecutive_days: FlowScore高が連続した日数
-    
-    Returns:
-        str: ステージ名
-    """
-    state = flow_data.get("state", "沈静")
-    
-    if flow_score >= 70 and consecutive_days >= 3:
-        return STAGE_WAITING  # 発表待ち
-    elif flow_score >= 60 and state == "吸収":
-        return STAGE_SIGNAL  # 匂い
-    elif flow_score >= 40:
-        return STAGE_ACCELERATION  # 加速
-    elif flow_score >= 20:
-        return STAGE_ACCUMULATION  # 仕込み
-    else:
-        return "監視中"
+def load_previous_streaks() -> dict:
+    """前回のratios.jsonから、FlowScore70+の連続日数を復元。"""
+    try:
+        p = Path("data/ratios.json")
+        if not p.exists():
+            return {}
+        prev = json.loads(p.read_text(encoding="utf-8"))
+        prev_data = prev.get("data", {}) or {}
+        return {t: int(d.get("flow_streak_high", 0)) for t, d in prev_data.items()}
+    except Exception:
+        return {}
 
 
-def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple:
-    """
-    銘柄の出来高データを取得し、FlowScoreを計算
-    
-    Returns:
-        tuple: (all_results, qualified_results)
-    """
-    results = {}
-    qualified = {}  # 条件を満たす銘柄
+def is_watch_state(flow_details: dict) -> bool:
+    """表示ラベル『要監視』判定（取引増×値動き小）。"""
+    return (flow_details.get("vol_anomaly", 0) > 50 and flow_details.get("price_stability", 0) > 60)
+
+
+def calculate_reorg_score(market_cap_oku: float | None, pbr: float | None) -> float:
+    """再編素地（0-100）。時価総額帯＋PBRで簡易評価。"""
+    score = 50.0
+    if market_cap_oku and market_cap_oku > 0:
+        center = (MARKET_CAP_MIN + MARKET_CAP_MAX) / 2
+        span = (MARKET_CAP_MAX - MARKET_CAP_MIN) / 2
+        dist = abs(market_cap_oku - center) / span
+        size_component = max(0.0, 1.0 - min(1.0, dist)) * 60.0
+        score = 20.0 + size_component
+
+    if pbr is not None and pbr > 0:
+        if pbr <= 1.0:
+            score += 20.0
+        elif pbr <= 2.0:
+            score += 10.0
+        elif pbr >= 5.0:
+            score -= 5.0
+
+    return float(min(100.0, max(0.0, score)))
+
+
+def calculate_event_score(stock: yf.Ticker, now_jst: datetime) -> tuple[float, list[str]]:
+    """直前兆候（0-100）とタグ。yfinanceで取れる範囲のみ。"""
+    score = 0.0
+    tags: list[str] = []
+
+    # 決算日近接（取れる場合のみ）
+    try:
+        ed = None
+        if hasattr(stock, "earnings_dates"):
+            edf = stock.earnings_dates
+            if edf is not None and len(edf) > 0:
+                ed = edf.index[0].to_pydatetime()
+        if ed:
+            ed_jst = JST.localize(ed) if ed.tzinfo is None else ed.astimezone(JST)
+            if abs((ed_jst.date() - now_jst.date()).days) <= 3:
+                score += 35.0
+                tags.append("決算近")
+    except Exception:
+        pass
+
+    # 権利期（配当など）
+    try:
+        info = stock.info or {}
+        ex = info.get("exDividendDate")
+        if ex:
+            ex_dt = datetime.fromtimestamp(int(ex), tz=JST)
+            delta = (ex_dt.date() - now_jst.date()).days
+            if -2 <= delta <= 5:
+                score += 15.0
+                tags.append("権利期")
+    except Exception:
+        pass
+
+    return float(min(100.0, score)), tags
+
+
+def determine_level(ma_score: float) -> int:
+    if ma_score >= 75:
+        return 4
+    if ma_score >= 60:
+        return 3
+    if ma_score >= 45:
+        return 2
+    if ma_score >= 30:
+        return 1
+    return 0
+
+
+def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, dict]:
+    results: dict = {}
+    qualified: dict = {}
+    prev_streaks = load_previous_streaks()
     total = len(tickers)
-    
+    now_jst = datetime.now(JST)
+
     for i in range(0, total, chunk_size):
         chunk = tickers[i:i + chunk_size]
         print(f"📥 データ取得中: {i+1}〜{min(i+chunk_size, total)} / {total}")
-        
+
         try:
             data = yf.download(
                 tickers=chunk,
@@ -1316,178 +1340,159 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple:
                 progress=False,
                 threads=True,
             )
-            
             if data.empty:
-                print(f"  ⚠️ データ取得失敗（空）")
                 continue
-            
+
             for ticker in chunk:
                 try:
-                    # データ抽出
                     if len(chunk) == 1:
-                        df = data[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+                        df = data[["Open", "High", "Low", "Close", "Volume"]].copy()
                     else:
                         if ticker not in data.columns.get_level_values(0):
                             continue
-                        df = data[ticker][['Open', 'High', 'Low', 'Close', 'Volume']].copy()
-                    
+                        df = data[ticker][["Open", "High", "Low", "Close", "Volume"]].copy()
+
                     df = df.dropna()
-                    
                     if len(df) < 60:
                         continue
-                    
-                    # === FlowScore計算 ===
-                    flow_data = calculate_flow_score(df)
-                    flow_score = flow_data["flow_score"]
-                    
-                    # === 基本データ取得 ===
-                    avg_volume = int(df['Volume'].tail(LOOKBACK_DAYS).mean())
-                    latest_volume = int(df['Volume'].iloc[-1])
-                    vol_ratio = round(latest_volume / avg_volume, 2) if avg_volume > 0 else 0
-                    latest_price = float(df['Close'].iloc[-1])
 
-                    # === 下値支持線（6か月の価格帯別売買高） ===
+                    flow_details = calculate_flow_score(df)
+                    flow_score = float(flow_details["flow_score"])
+
+                    avg_volume = int(df["Volume"].tail(LOOKBACK_DAYS).mean())
+                    latest_volume = int(df["Volume"].iloc[-1])
+                    vol_ratio = round(latest_volume / avg_volume, 2) if avg_volume > 0 else 0
+                    latest_price = float(df["Close"].iloc[-1])
+
+                    # 下値ライン（直近6か月の価格帯別売買高の高出来高ゾーン下限）
                     support_price = None
-                    support_zone_upper = None
-                    price_vs_support_pct = None
-                    zone_label = None
+                    support_upper = None
+                    support_gap_pct = None
+                    support_tag = None
                     try:
-                        df_6mo = df.tail(126).copy()  # 約6か月（営業日）
-                        vp6 = calculate_volume_profile(df_6mo, bins=24)
-                        support_price, support_zone_upper = compute_support_zone_from_profile(vp6, threshold_ratio=0.60)
-                        if support_price and support_price > 0:
-                            price_vs_support_pct = (latest_price - support_price) / support_price * 100.0
-                            # 表現は「割安/割高」を避け、位置関係だけを示す
-                            if price_vs_support_pct <= 3.0:
-                                zone_label = "下値ゾーン"
-                            elif price_vs_support_pct >= 25.0:
-                                zone_label = "上方乖離"
+                        df_6m = df.tail(126).copy()  # 約6か月
+                        vp6 = calculate_volume_profile(df_6m, bins=24)
+                        support_price, support_upper = compute_support_zone_from_profile(vp6, threshold_ratio=0.60)
+                        support_tag, support_gap_pct = support_position_tag(latest_price, support_price)
                     except Exception:
                         pass
-                    
-                    # 直近5日の価格変動率
-                    price_change_5d = round((df['Close'].iloc[-1] / df['Close'].iloc[-6] - 1) * 100, 2) if len(df) >= 6 else 0
-                    
-                    # 時価総額を取得
-                    market_cap_oku = 0
+
+                    price_change_5d = round((df["Close"].iloc[-1] / df["Close"].iloc[-6] - 1) * 100, 2) if len(df) >= 6 else 0
+
+                    market_cap_oku = 0.0
                     api_name = None
                     pbr = None
+                    stock = None
                     try:
                         stock = yf.Ticker(ticker)
-                        info = stock.info
-                        market_cap = info.get("marketCap", 0)
-                        if market_cap:
-                            market_cap_oku = round(market_cap / 1e8, 0)
-                        api_name = info.get("shortName", info.get("longName", None))
-                        pbr = info.get("priceToBook", None)
+                        info = stock.info or {}
+                        mc = info.get("marketCap", 0) or 0
+                        if mc:
+                            market_cap_oku = round(float(mc) / 1e8, 0)
+                        api_name = info.get("shortName") or info.get("longName")
+                        pbr = info.get("priceToBook")
                     except Exception:
                         pass
-                    
-                    # 日本語名を取得
-                    name = get_japanese_name(ticker, api_name)
-                    
-                    # 時価総額フィルター
-                    in_range = MARKET_CAP_MIN <= market_cap_oku <= MARKET_CAP_MAX
-                    
-                    # ステージ判定
-                    stage = determine_stage(flow_score, flow_data)
-                    
-                    # 条件一致タグ
-                    tags = []
-                    if flow_data["vol_anomaly"] >= 50:
-                        tags.append("○出来高異常")
-                    if flow_data["absorption"] >= 50:
-                        tags.append("○吸収観測")
-                    if flow_data["price_stability"] >= 70:
-                        tags.append("○価格安定")
 
-                    # 支持線ベースの位置タグ（投資助言・価値判断ではなく、位置情報）
-                    if zone_label:
-                        # 目立たせたいので先頭に入れる
-                        tags.insert(0, zone_label)
-                    
-                    # 結果を格納
-                    result_data = {
+                    name = get_japanese_name(ticker, api_name)
+                    in_range = (MARKET_CAP_MIN <= market_cap_oku <= MARKET_CAP_MAX)
+
+                    # 要監視（表示用）
+                    watch_flag = is_watch_state(flow_details)
+                    display_state = "要監視" if watch_flag else "観測中"
+
+                    # 連続（Flow70+）
+                    prev_high = int(prev_streaks.get(ticker, 0))
+                    flow_streak_high = prev_high + 1 if flow_score >= FLOW_SCORE_HIGH else 0
+
+                    # 追加スコア
+                    reorg_score = calculate_reorg_score(market_cap_oku, pbr)
+                    event_score, event_tags = (0.0, [])
+                    try:
+                        stock_for_event = stock if stock is not None else yf.Ticker(ticker)
+                        event_score, event_tags = calculate_event_score(stock_for_event, now_jst)
+                    except Exception:
+                        pass
+
+                    ma_score = float(min(100.0, max(0.0, flow_score * 0.45 + reorg_score * 0.40 + event_score * 0.15)))
+                    level = determine_level(ma_score)
+
+                    tags = []
+                    # 下値ライン位置タグ（中立表現）
+                    if support_tag:
+                        tags.append(support_tag)
+                    if watch_flag:
+                        tags.append("要監視")
+                    if flow_details.get("vol_anomaly", 0) >= 50:
+                        tags.append("出来高変化")
+                    if flow_streak_high >= 2:
+                        tags.append(f"継続{flow_streak_high}日")
+                    tags.extend(event_tags)
+
+                    result = {
                         "name": name,
+                        "price": round(latest_price, 1),
                         "volume": latest_volume,
                         "avg_volume": avg_volume,
                         "vol_ratio": vol_ratio,
-                        "price": round(latest_price, 1),
                         "price_change_5d": price_change_5d,
-                        "market_cap_oku": int(market_cap_oku),
-                        "pbr": round(pbr, 2) if pbr else None,
+                        "market_cap_oku": int(market_cap_oku) if market_cap_oku else 0,
+                        "pbr": round(float(pbr), 2) if pbr else None,
                         "in_cap_range": in_range,
-                        "flow_score": flow_score,
-                        "flow_details": flow_data,
-                        "stage": stage,
-                        "state": flow_data["state"],
-                        "tags": tags,
+                        "level": int(level),
+                        "ma_score": round(ma_score, 1),
+                        "flow_score": round(flow_score, 1),
+                        "flow_details": flow_details,
+                        "flow_streak_high": int(flow_streak_high),
+                        "reorg_score": round(reorg_score, 1),
+                        "event_score": round(event_score, 1),
+                        "display_state": display_state,
                         "support_price": round(float(support_price), 1) if support_price else None,
-                        "support_zone_upper": round(float(support_zone_upper), 1) if support_zone_upper else None,
-                        "price_vs_support_pct": round(float(price_vs_support_pct), 1) if price_vs_support_pct is not None else None,
+                        "support_upper": round(float(support_upper), 1) if support_upper else None,
+                        "support_gap_pct": round(float(support_gap_pct), 1) if support_gap_pct is not None else None,
+                        "tags": tags,
                     }
-                    
-                    results[ticker] = result_data
-                    
-                    # FlowScore >= 40 かつ 時価総額範囲内 の銘柄を抽出
-                    if flow_score >= FLOW_SCORE_MEDIUM and in_range:
-                        qualified[ticker] = result_data
-                        print(f"  🎯 {ticker} {name}: FlowScore={flow_score}, Stage={stage}, {market_cap_oku:.0f}億円")
-                    elif flow_score >= 30:
-                        print(f"  📊 {ticker} {name}: FlowScore={flow_score}, State={flow_data['state']}")
-                    
+
+                    results[ticker] = result
+
+                    if in_range and flow_score >= FLOW_SCORE_MEDIUM:
+                        qualified[ticker] = result
+
                 except Exception as e:
-                    print(f"  ❌ {ticker}: エラー - {str(e)[:50]}")
+                    print(f"  ❌ {ticker}: {str(e)[:80]}")
                     continue
-                    
+
         except Exception as e:
             print(f"  ❌ チャンク取得エラー: {e}")
-        
-        # API制限対策
-        time.sleep(0.3)
-    
+
+        time.sleep(0.25)
+
     return results, qualified
 
 
 def main():
-    print("=" * 60)
-    print("🦅 HAGETAKA SCOPE - M&A候補検知")
-    print("=" * 60)
-    print("📊 FlowScore（吸収観測の強度）で候補を抽出")
-    print("=" * 60)
-    
     now_jst = datetime.now(JST)
     updated_at = now_jst.strftime("%Y-%m-%d %H:%M:%S")
+
+    print("=" * 60)
+    print("🦅 HAGETAKA SCOPE - 日次候補抽出")
+    print("=" * 60)
     print(f"⏰ 実行時刻: {updated_at} JST")
     print(f"🎯 対象: 時価総額 {MARKET_CAP_MIN}億〜{MARKET_CAP_MAX}億円")
     print(f"📋 監視銘柄数: {len(MIDCAP_TICKERS)}")
-    
-    # データを取得
+
     results, qualified = fetch_volume_data(MIDCAP_TICKERS)
-    print(f"\n✅ データ取得成功: {len(results)}銘柄")
-    
-    # 時価総額フィルター通過銘柄
-    filtered = {k: v for k, v in results.items() if v.get("in_cap_range", False)}
-    print(f"✅ 時価総額フィルター通過: {len(filtered)}銘柄")
-    
-    # FlowScore条件を満たす銘柄
-    print(f"🎯 候補銘柄（FlowScore >= {FLOW_SCORE_MEDIUM}）: {len(qualified)}銘柄")
-    
-    # ソート（FlowScoreの高い順）
-    sorted_qualified = dict(sorted(qualified.items(), key=lambda x: x[1]["flow_score"], reverse=True))
-    sorted_filtered = dict(sorted(filtered.items(), key=lambda x: x[1]["flow_score"], reverse=True))
-    
-    # 統計
-    high_count = len([r for r in sorted_qualified.values() if r["flow_score"] >= FLOW_SCORE_HIGH])
-    medium_count = len([r for r in sorted_qualified.values() if r["flow_score"] >= FLOW_SCORE_MEDIUM])
-    
-    # ステージ別集計
-    stage_counts = {}
+
+    filtered = {k: v for k, v in results.items() if v.get("in_cap_range")}
+    # 並び：LEVEL→MAScore→FlowScore
+    sorted_qualified = dict(sorted(qualified.items(), key=lambda x: (int(x[1].get("level",0)), float(x[1].get("ma_score",0)), float(x[1].get("flow_score",0))), reverse=True))
+    sorted_filtered = dict(sorted(filtered.items(), key=lambda x: (int(x[1].get("level",0)), float(x[1].get("ma_score",0)), float(x[1].get("flow_score",0))), reverse=True))
+
+    level_counts = {}
     for r in sorted_qualified.values():
-        stage = r.get("stage", "監視中")
-        stage_counts[stage] = stage_counts.get(stage, 0) + 1
-    
-    # 出力
+        lv = int(r.get("level", 0))
+        level_counts[lv] = level_counts.get(lv, 0) + 1
+
     output = {
         "updated_at": updated_at,
         "date": now_jst.strftime("%Y-%m-%d"),
@@ -1495,40 +1500,16 @@ def main():
         "total_count": len(sorted_qualified),
         "all_count": len(results),
         "filtered_count": len(filtered),
-        "high_flow_count": high_count,
-        "medium_flow_count": medium_count,
-        "stage_counts": stage_counts,
-        "data": sorted_qualified,  # 候補銘柄
-        "all_data": sorted_filtered,  # 全銘柄（参考用）
-        "disclaimer": "本ツールは市場データの可視化を目的とした補助ツールです。銘柄推奨・売買助言ではありません。"
+        "level_counts": level_counts,
+        "data": sorted_qualified,
+        "all_data": sorted_filtered,
+        "disclaimer": "本ツールは市場データの可視化を目的とした補助ツールです。銘柄推奨・売買助言ではありません。",
     }
-    
+
     os.makedirs("data", exist_ok=True)
-    with open("data/ratios.json", "w", encoding="utf-8") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
-    
-    print(f"\n💾 保存完了: data/ratios.json")
-    
-    # サマリー
-    print("\n" + "=" * 60)
-    print("📈 検知結果サマリー")
-    print("=" * 60)
-    print(f"  監視銘柄数: {len(MIDCAP_TICKERS)}")
-    print(f"  データ取得成功: {len(results)}銘柄")
-    print(f"  時価総額フィルター通過: {len(filtered)}銘柄")
-    print(f"  🎯 候補銘柄: {len(sorted_qualified)}銘柄")
-    print(f"    - FlowScore 70以上: {high_count}銘柄")
-    print(f"    - FlowScore 40以上: {medium_count}銘柄")
-    print("\n📊 ステージ別:")
-    for stage, count in sorted(stage_counts.items(), key=lambda x: x[1], reverse=True):
-        print(f"    - {stage}: {count}銘柄")
-    
-    if sorted_qualified:
-        print("\n🎯 上位10銘柄:")
-        for ticker, info in list(sorted_qualified.items())[:10]:
-            print(f"  [{info['stage']}] {ticker} {info['name']}: FlowScore={info['flow_score']}, {info['state']} | {info['market_cap_oku']}億円")
-    else:
-        print("\n📭 本日は候補銘柄がありませんでした")
+    Path("data/ratios.json").write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("💾 保存完了: data/ratios.json")
+    print(f"🎯 候補: {len(sorted_qualified)} 件 / フィルタ通過: {len(filtered)} 件")
 
 
 if __name__ == "__main__":
