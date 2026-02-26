@@ -1,7 +1,7 @@
 """
 HAGETAKA SCOPE - M&A候補検知ツール
 - ログイン機能（共通パスワード or 登録済みメールアドレス）
-- FlowScore（吸収観測の強度）によるM&A候補検知
+- FlowScore（要監視スコア）によるM&A候補検知
 - 利用者ごとのメール通知機能（Google Sheets永続化）
 - チャート表示機能（ローソク足・出来高・価格帯別売買高）
 
@@ -46,13 +46,22 @@ MARKET_CAP_MAX = 2000
 FLOW_SCORE_HIGH = 70
 FLOW_SCORE_MEDIUM = 40
 
-# ステージ定義
-STAGE_COLORS = {
-    "発表待ち": "#E53935",  # 赤
-    "匂い": "#FF9800",      # オレンジ
-    "加速": "#FFC107",      # 黄色
-    "仕込み": "#4CAF50",    # 緑
-    "監視中": "#9E9E9E",    # グレー
+# LEVEL色（数字のみ表示）
+LEVEL_COLORS = {
+    4: "#E53935",  # 赤
+    3: "#FF9800",  # オレンジ
+    2: "#FFC107",  # 黄色
+    1: "#4CAF50",  # 緑
+    0: "#9E9E9E",  # グレー（条件弱い/該当なし）
+}
+
+# 状態ラベル（初心者向け・非助言）
+STATE_COLORS = {
+    "要監視": "#7E57C2",  # 紫
+    "拡散": "#FF7043",    # オレンジ
+    "沈静": "#90A4AE",    # グレー
+    "観測中": "#9E9E9E",  # グレー
+    "通常": "#9E9E9E",    # グレー
 }
 
 # 共通ログインパスワード（初回用）
@@ -377,6 +386,71 @@ p, span, label, div { color: #333; }
     font-size: 0.85rem;
     color: #333;
 }
+
+/* ===== LEVELガイド（画面を邪魔しない・スクロール追従） ===== */
+#stickyGuide {
+  position: sticky;
+  top: 8px;
+  z-index: 999;
+  margin: 0.2rem 0 0.8rem 0;
+}
+#stickyGuide details {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #F0D7D7;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(196, 30, 58, 0.08);
+  padding: 0.4rem 0.6rem;
+}
+#stickyGuide summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+  color: #C41E3A;
+  font-size: 0.85rem;
+}
+#stickyGuide summary::-webkit-details-marker { display: none; }
+.guideBody {
+  margin-top: 0.6rem;
+  font-size: 0.78rem;
+  color: #333;
+}
+.guideNote {
+  background: #FFF5F5;
+  border: 1px solid #F0D7D7;
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.6rem;
+  color: #444;
+  line-height: 1.6;
+}
+.guideGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+}
+.lv {
+  display: inline-block;
+  color: #fff;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+.lvText { font-weight: 700; margin-bottom: 0.15rem; }
+.lvDo { color: #555; }
+.guideLegend { margin-top: 0.6rem; }
+.guideLegend .tag {
+  display: inline-block;
+  color: #fff;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.72rem;
+  margin-right: 0.3rem;
+  margin-bottom: 0.3rem;
+}
+.guideSmall { color: #666; margin-top: 0.25rem; line-height: 1.5; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -455,18 +529,18 @@ def calculate_flow_state(df: pd.DataFrame, avg_volume: int = 0) -> dict:
     # 価格変動率（絶対値）
     df['price_change'] = abs(df['Close'].pct_change()) * 100
     
-    # 吸収観測日（出来高増加 & 価格安定）を検出
+    # 要監視日（取引増加 & 値動き小）を検出
     absorption_days = []
     for i in range(1, len(df)):
         vol_ratio = df['volume_ratio'].iloc[i]
         price_change = df['price_change'].iloc[i]
         
-        # 吸収条件: 出来高1.3倍以上 & 価格変動2%以下
+        # 要監視条件: 出来高1.3倍以上 & 価格変動2%以下
         if vol_ratio >= 1.3 and price_change <= 2.0:
             absorption_days.append(df.index[i])
     
     return {
-        "state": "吸収" if len(absorption_days) >= 2 else "観測中",
+        "state": "要監視" if len(absorption_days) >= 2 else "通常",
         "absorption_days": absorption_days
     }
 
@@ -523,7 +597,7 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         row=1, col=1
     )
     
-    # 吸収観測日にマーカーを追加（○記号）
+    # 要監視日にマーカーを追加（○記号）
     for abs_day in absorption_days:
         if abs_day in df.index:
             fig.add_annotation(
@@ -541,9 +615,9 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         vol_ratio = row['Volume'] / avg_vol if avg_vol > 0 else 1
         price_change = abs(row['Close'] / row['Open'] - 1) * 100 if row['Open'] > 0 else 0
         
-        # 吸収観測（出来高増 & 価格安定）
+        # 要監視（取引増 & 値動き小）
         if vol_ratio >= 1.5 and price_change <= 1.5:
-            colors.append('#7E57C2')  # 紫（吸収観測）
+            colors.append('#7E57C2')  # 紫（要監視）
         elif vol_ratio >= 1.5:
             colors.append('#FF7043')  # オレンジ（出来高増）
         elif vol_ratio >= 1.2:
@@ -654,12 +728,13 @@ def show_chart_modal(ticker: str, stock_info: dict):
     name = stock_info.get("name", ticker)
     avg_volume = stock_info.get("avg_volume", 0)
     flow_score = stock_info.get("flow_score", 0)
-    stage = stock_info.get("stage", "監視中")
-    state = stock_info.get("state", "観測中")
+    level = int(stock_info.get("level", 0) or 0)
+    # state は "要監視" / "拡散" / "沈静" / "観測中" を想定
+    state = stock_info.get("state", "通常")
     flow_details = stock_info.get("flow_details", {})
     
-    # ステージ色
-    stage_color = STAGE_COLORS.get(stage, "#9E9E9E")
+    level_color = LEVEL_COLORS.get(level, "#9E9E9E")
+    state_color = STATE_COLORS.get(state, "#9E9E9E")
     
     # 戻るボタン
     if st.button("← 一覧に戻る", key="back_btn"):
@@ -694,28 +769,31 @@ def show_chart_modal(ticker: str, stock_info: dict):
             </div>
             <div style="display: flex; justify-content: center; gap: 1rem; margin-top: 0.5rem;">
                 <div style="background: rgba(255,255,255,0.2); padding: 0.3rem 0.8rem; border-radius: 20px;">
-                    吸収観測: <strong>{flow_score}</strong>
+                    FlowScore: <strong>{flow_score}</strong>
                 </div>
-                <div style="background: {stage_color}; padding: 0.3rem 0.8rem; border-radius: 20px;">
-                    {stage}
+                <div style="background: {level_color}; padding: 0.3rem 0.8rem; border-radius: 20px;">
+                    LEVEL {level}
+                </div>
+                <div style="background: {state_color}; padding: 0.3rem 0.8rem; border-radius: 20px;">
+                    {state}
                 </div>
             </div>
             <div style="font-size: 0.8rem; margin-top: 0.3rem; opacity: 0.9;">
-                状態: {state} | 期間: {period_labels.get(period, '6ヶ月')}
+                期間: {period_labels.get(period, '6ヶ月')}
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # FlowScore詳細（折りたたみ）
-    with st.expander("📊 吸収観測の詳細"):
+    with st.expander("📊 状態スコアの詳細"):
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("出来高異常度", f"{flow_details.get('vol_anomaly', 0)}")
         with col2:
             st.metric("価格安定度", f"{flow_details.get('price_stability', 0)}")
         with col3:
-            st.metric("吸収度", f"{flow_details.get('absorption', 0)}")
+            st.metric("要監視度", f"{flow_details.get('absorption', 0)}")
     
     # チャート表示
     with st.spinner("チャートを読み込み中..."):
@@ -728,10 +806,10 @@ def show_chart_modal(ticker: str, stock_info: dict):
         <strong>📊 チャートの見方</strong><br>
         <span style="color: #26A69A;">■</span> 陽線（上昇）　
         <span style="color: #EF5350;">■</span> 陰線（下落）<br>
-        <span style="color: #7E57C2;">■</span> 出来高：吸収観測（出来高増&価格安定）　
+        <span style="color: #7E57C2;">■</span> 出来高：要監視（取引増&値動き小）　
         <span style="color: #FF7043;">■</span> 出来高増　
         <span style="color: #90A4AE;">■</span> 通常<br>
-        <span style="color: #7E57C2;">○</span> 吸収観測日（条件一致）
+        <span style="color: #7E57C2;">○</span> 要監視日（条件一致）
     </div>
     """, unsafe_allow_html=True)
 
@@ -980,8 +1058,11 @@ def send_spike_alert(email: str, app_password: str, stocks: List[Dict], updated_
 def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
     """銘柄カードを表示（FlowScore対応）"""
     flow_score = d.get("flow_score", 0)
-    stage = d.get("stage", "監視中")
-    state = d.get("state", "観測中")
+    stage = d.get("stage", "監視中")  # 旧データ互換
+    state = d.get("state", "通常")
+    # level は新データ。旧データの場合は stage から推定。
+    stage_to_level = {"発表待ち": 4, "匂い": 3, "加速": 2, "仕込み": 1, "監視中": 0}
+    level = int(d.get("level", stage_to_level.get(stage, 0)) or 0)
     tags = d.get("tags", [])
     
     # FlowScoreに基づくカードクラス
@@ -995,8 +1076,8 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
         card_class = ""
         score_class = "normal"
     
-    # ステージ色
-    stage_color = STAGE_COLORS.get(stage, "#9E9E9E")
+    level_color = LEVEL_COLORS.get(level, "#9E9E9E")
+    state_color = STATE_COLORS.get(state, "#9E9E9E")
     
     code = ticker.replace(".T", "")
     url = f"https://finance.yahoo.co.jp/quote/{code}.T"
@@ -1017,13 +1098,15 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
                 <span style="font-size:0.75rem;color:#888;margin-left:6px;">{str(name_jp)[:12]}</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
-                <span style="background:{stage_color};color:white;padding:3px 10px;border-radius:12px;font-size:0.75rem;font-weight:600;">{stage}</span>
+                <span style="background:{level_color};color:white;padding:3px 10px;border-radius:12px;font-size:0.75rem;font-weight:800;">LEVEL {level}</span>
                 <div class="ratio-badge {score_class}">{flow_score}</div>
             </div>
         </div>
         <div class="card-body">
             <div><span class="info-label">現在値</span><br><span class="info-value" style="color:#C41E3A;font-weight:600;">¥{d['price']:,.0f}</span></div>
-            <div><span class="info-label">状態</span><br><span class="info-value">{state}</span></div>
+            <div><span class="info-label">状態</span><br>
+                 <span style="background:{state_color};color:white;padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:800;">{state}</span>
+            </div>
             <div><span class="info-label">時価総額</span><br><span class="info-value">{d['market_cap_oku']:,}億円</span></div>
             <div><span class="info-label">出来高倍率</span><br><span class="info-value">{d.get('vol_ratio', 0)}x</span></div>
         </div>
@@ -1203,7 +1286,7 @@ def show_main_page():
     with tab1:
         if data:
             updated_at = data.get("updated_at", "不明")
-            stage_counts = data.get("stage_counts", {})
+            level_counts = data.get("level_counts", {})
             
             st.markdown(f"""
             <div class="update-info">
@@ -1212,22 +1295,28 @@ def show_main_page():
             </div>
             """, unsafe_allow_html=True)
             
-            # FlowScore説明
-            st.markdown("""
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                        border-radius: 10px; padding: 0.8rem; margin-bottom: 1rem; color: white; font-size: 0.8rem;">
-                <strong>🎯 吸収観測による候補抽出</strong><br>
-                出来高増加＋価格安定（＝大口の静かな買い集め）を検知
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # ステージ凡例
-            st.markdown("""
-            <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:0.8rem;margin-bottom:0.8rem;font-size:0.7rem;">
-                <span style="background:#E53935;color:white;padding:2px 8px;border-radius:10px;">発表待ち</span>
-                <span style="background:#FF9800;color:white;padding:2px 8px;border-radius:10px;">匂い</span>
-                <span style="background:#FFC107;color:white;padding:2px 8px;border-radius:10px;">加速</span>
-                <span style="background:#4CAF50;color:white;padding:2px 8px;border-radius:10px;">仕込み</span>
+            # 画面を邪魔しないガイド（スクロールしても上部に残る）
+            st.markdown(f"""
+            <div id="stickyGuide">
+              <details>
+                <summary>❓ LEVELガイド</summary>
+                <div class="guideBody">
+                  <div class="guideNote">{DISCLAIMER_TEXT}</div>
+                  <div class="guideGrid">
+                    <div><span class="lv" style="background:{LEVEL_COLORS[4]};">LEVEL 4</span><div class="lvText">条件一致が多く、状況の密度が高い</div><div class="lvDo">見ること：レベル推移／ニュース・開示／値幅の急変</div></div>
+                    <div><span class="lv" style="background:{LEVEL_COLORS[3]};">LEVEL 3</span><div class="lvText">複数条件が重なっている</div><div class="lvDo">見ること：一致した条件の内訳／ニュース・開示</div></div>
+                    <div><span class="lv" style="background:{LEVEL_COLORS[2]};">LEVEL 2</span><div class="lvText">変化が見え始めた</div><div class="lvDo">見ること：直近7〜14日の推移／状態タグ</div></div>
+                    <div><span class="lv" style="background:{LEVEL_COLORS[1]};">LEVEL 1</span><div class="lvText">条件に触れた</div><div class="lvDo">見ること：ウォッチ登録／週1確認</div></div>
+                  </div>
+                  <div class="guideLegend">
+                    <span class="tag" style="background:{STATE_COLORS['要監視']};">要監視</span>
+                    <span class="tag" style="background:{STATE_COLORS['拡散']};">拡散</span>
+                    <span class="tag" style="background:{STATE_COLORS['沈静']};">沈静</span>
+                    <span class="tag" style="background:{STATE_COLORS['通常']};">通常</span>
+                    <div class="guideSmall">※タグは売買指示ではなく、状態の可視化（条件一致）です。</div>
+                  </div>
+                </div>
+              </details>
             </div>
             """, unsafe_allow_html=True)
             
@@ -1253,12 +1342,21 @@ def show_main_page():
             
             st.markdown("")
             
-            # ステージフィルター
-            stage_options = ["すべて"] + list(STAGE_COLORS.keys())
-            filter_stage = st.radio("ステージ", stage_options, horizontal=True, label_visibility="collapsed")
-            
-            if filter_stage != "すべて":
-                display_data = {k: v for k, v in display_data.items() if v.get("stage") == filter_stage}
+            # LEVELフィルター（数字のみ）
+            level_options = ["すべて", "4", "3", "2", "1"]
+            filter_level = st.radio("LEVEL", level_options, horizontal=True, label_visibility="collapsed")
+            if filter_level != "すべて":
+                target = int(filter_level)
+                # 旧データ互換：stageから推定
+                stage_to_level = {"発表待ち": 4, "匂い": 3, "加速": 2, "仕込み": 1}
+                def _get_level(v):
+                    if "level" in v and v.get("level") is not None:
+                        try:
+                            return int(v.get("level") or 0)
+                        except:
+                            return 0
+                    return stage_to_level.get(v.get("stage", ""), 0)
+                display_data = {k: v for k, v in display_data.items() if _get_level(v) == target}
             
             # カード表示
             if display_data:
