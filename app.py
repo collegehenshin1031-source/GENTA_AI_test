@@ -1210,30 +1210,26 @@ def show_main_page():
             """, unsafe_allow_html=True)
             
             
-            # LEVELガイド（邪魔しない表示）
-            def st.markdown('<div class="sticky-guide">', unsafe_allow_html=True)
-            _render_level_guide()
-            st.markdown('</div>', unsafe_allow_html=True):
-                guide_md = """
-**LEVELは“条件一致の多さ”を示す目安（0〜4）です。**
+                        # LEVELガイド（邪魔しない表示）
+            guide_md = """
+**LEVELは“条件一致の多さ”を示す目安（1〜4）です。**
+本ツールは市場データの可視化であり、銘柄推奨・売買助言ではありません。
 
 - **LEVEL 1**：条件に触れた（変化は小さい）
 - **LEVEL 2**：変化が見え始めた
 - **LEVEL 3**：複数条件が重なっている
 - **LEVEL 4**：条件一致が多く密度が高い
 
-※本ツールは市場データの可視化です。銘柄推奨・売買助言ではありません。
+**要監視**：取引量が増えているのに値動きが小さい等、状態が“目立つ”ときに表示されます（理由は複数あります）。
 """
-                try:
-                    with st.popover("❓LEVEL", use_container_width=False):
-                        st.markdown(guide_md)
-                except Exception:
-                    with st.expander("❓LEVELガイド", expanded=False):
-                        st.markdown(guide_md)
 
-            st.markdown('<div class="sticky-guide">', unsafe_allow_html=True)
-            _render_level_guide()
-            st.markdown('</div>', unsafe_allow_html=True)
+            # 画面を邪魔しないガイド（対応ブラウザはpopover、だめならexpander）
+            try:
+                with st.popover("❓LEVEL", use_container_width=False):
+                    st.markdown(guide_md)
+            except Exception:
+                with st.expander("❓LEVELガイド", expanded=False):
+                    st.markdown(guide_md)
 
             # 説明（中立表現）
             st.markdown("""
