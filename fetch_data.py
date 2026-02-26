@@ -2,8 +2,8 @@
 HAGETAKA SCOPE - M&A候補検知スクリプト
 - GitHub Actionsで毎日16:30 JSTに自動実行
 - 時価総額300億〜2000億円の中型株を監視
-- FlowScore（吸収観測の強度）を計算
-- ステージ分類（仕込み/加速/匂い/発表待ち）
+- FlowScore（要監視スコア）を計算
+- LEVEL分類（1〜4。数字のみ表示）
 
 ※中型株リストは事前に用意（API制限対策）
 ※時価総額は取得時に再チェックし、範囲外は除外
@@ -33,14 +33,14 @@ MARKET_CAP_MIN = 300   # 300億円以上
 MARKET_CAP_MAX = 2000  # 2000億円以下
 
 # FlowScore閾値
-FLOW_SCORE_HIGH = 70    # 高い吸収観測
-FLOW_SCORE_MEDIUM = 40  # 中程度の吸収観測
+FLOW_SCORE_HIGH = 70    # 要監視スコア（高）
+FLOW_SCORE_MEDIUM = 40  # 要監視スコア（中）
 
-# ステージ定義
-STAGE_ACCUMULATION = "仕込み"   # Reorg高＋Flow出始め
-STAGE_ACCELERATION = "加速"     # Flow強（吸収が継続/強化）
-STAGE_SIGNAL = "匂い"           # Event加点が入り、近そう
-STAGE_WAITING = "発表待ち"      # Flow継続＋Event複数回
+# LEVEL定義（数字のみ）
+LEVEL_1 = 1  # 条件に触れた
+LEVEL_2 = 2  # 変化が見え始めた
+LEVEL_3 = 3  # 複数条件が重なっている
+LEVEL_4 = 4  # 条件一致が多く密度が高い
 
 # ==========================================
 # 日本語銘柄名辞書
@@ -1073,12 +1073,12 @@ def get_japanese_name(ticker: str, api_name: str = None) -> str:
 
 def calculate_flow_score(df: pd.DataFrame) -> dict:
     """
-    FlowScore（吸収観測の強度）を計算
+    FlowScore（要監視スコア）を計算
     
     Components:
     - vol_anomaly: 出来高の異常度（過去平均との乖離）
     - price_stability: 価格の安定度（出来高増でも価格が動かない）
-    - absorption: 吸収度（出来高増加率 ÷ 価格変動率）
+    - absorption: 要監視度（取引増 × 値動き小 を強めに評価）
     - range_compression: 値幅縮小度（ATRの低下）
     - lower_shadow: 下ヒゲの強さ（下げ渋り）
     
@@ -1156,7 +1156,7 @@ def calculate_flow_score(df: pd.DataFrame) -> dict:
         
         # === 状態判定 ===
         if vol_anomaly > 50 and price_stability > 60:
-            state = "吸収"
+            state = "要監視"
         elif vol_anomaly > 50 and price_stability < 40:
             state = "拡散"
         elif vol_anomaly < 20:
@@ -1187,9 +1187,8 @@ def calculate_flow_score(df: pd.DataFrame) -> dict:
         }
 
 
-def determine_stage(flow_score: float, flow_data: dict, consecutive_days: int = 0) -> str:
-    """
-    ステージを判定
+def determine_level(flow_score: float, flow_data: dict, consecutive_days: int = 0) -> int:
+    """LEVELを判定（数字のみ）
     
     Args:
         flow_score: FlowScore
@@ -1197,20 +1196,21 @@ def determine_stage(flow_score: float, flow_data: dict, consecutive_days: int = 
         consecutive_days: FlowScore高が連続した日数
     
     Returns:
-        str: ステージ名
+        int: LEVEL (0-4)
     """
     state = flow_data.get("state", "沈静")
     
+    # NOTE: consecutive_days は将来拡張用。現状は 0 のままでも動作。
     if flow_score >= 70 and consecutive_days >= 3:
-        return STAGE_WAITING  # 発表待ち
-    elif flow_score >= 60 and state == "吸収":
-        return STAGE_SIGNAL  # 匂い
+        return LEVEL_4
+    elif flow_score >= 60 and state == "要監視":
+        return LEVEL_3
     elif flow_score >= 40:
-        return STAGE_ACCELERATION  # 加速
+        return LEVEL_2
     elif flow_score >= 20:
-        return STAGE_ACCUMULATION  # 仕込み
+        return LEVEL_1
     else:
-        return "監視中"
+        return 0
 
 
 def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple:
@@ -1292,15 +1292,15 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple:
                     # 時価総額フィルター
                     in_range = MARKET_CAP_MIN <= market_cap_oku <= MARKET_CAP_MAX
                     
-                    # ステージ判定
-                    stage = determine_stage(flow_score, flow_data)
+                    # LEVEL判定
+                    level = determine_level(flow_score, flow_data)
                     
                     # 条件一致タグ
                     tags = []
                     if flow_data["vol_anomaly"] >= 50:
                         tags.append("○出来高異常")
                     if flow_data["absorption"] >= 50:
-                        tags.append("○吸収観測")
+                        tags.append("○要監視")
                     if flow_data["price_stability"] >= 70:
                         tags.append("○価格安定")
                     
@@ -1317,7 +1317,7 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple:
                         "in_cap_range": in_range,
                         "flow_score": flow_score,
                         "flow_details": flow_data,
-                        "stage": stage,
+                        "level": level,
                         "state": flow_data["state"],
                         "tags": tags,
                     }
@@ -1327,7 +1327,7 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple:
                     # FlowScore >= 40 かつ 時価総額範囲内 の銘柄を抽出
                     if flow_score >= FLOW_SCORE_MEDIUM and in_range:
                         qualified[ticker] = result_data
-                        print(f"  🎯 {ticker} {name}: FlowScore={flow_score}, Stage={stage}, {market_cap_oku:.0f}億円")
+                        print(f"  🎯 {ticker} {name}: FlowScore={flow_score}, LEVEL={level}, {market_cap_oku:.0f}億円")
                     elif flow_score >= 30:
                         print(f"  📊 {ticker} {name}: FlowScore={flow_score}, State={flow_data['state']}")
                     
@@ -1348,7 +1348,7 @@ def main():
     print("=" * 60)
     print("🦅 HAGETAKA SCOPE - M&A候補検知")
     print("=" * 60)
-    print("📊 FlowScore（吸収観測の強度）で候補を抽出")
+    print("📊 FlowScore（要監視スコア）で候補を抽出")
     print("=" * 60)
     
     now_jst = datetime.now(JST)
@@ -1376,11 +1376,11 @@ def main():
     high_count = len([r for r in sorted_qualified.values() if r["flow_score"] >= FLOW_SCORE_HIGH])
     medium_count = len([r for r in sorted_qualified.values() if r["flow_score"] >= FLOW_SCORE_MEDIUM])
     
-    # ステージ別集計
-    stage_counts = {}
+    # LEVEL別集計
+    level_counts = {}
     for r in sorted_qualified.values():
-        stage = r.get("stage", "監視中")
-        stage_counts[stage] = stage_counts.get(stage, 0) + 1
+        lv = int(r.get("level", 0) or 0)
+        level_counts[str(lv)] = level_counts.get(str(lv), 0) + 1
     
     # 出力
     output = {
@@ -1392,7 +1392,7 @@ def main():
         "filtered_count": len(filtered),
         "high_flow_count": high_count,
         "medium_flow_count": medium_count,
-        "stage_counts": stage_counts,
+        "level_counts": level_counts,
         "data": sorted_qualified,  # 候補銘柄
         "all_data": sorted_filtered,  # 全銘柄（参考用）
         "disclaimer": "本ツールは市場データの可視化を目的とした補助ツールです。銘柄推奨・売買助言ではありません。"
@@ -1414,14 +1414,14 @@ def main():
     print(f"  🎯 候補銘柄: {len(sorted_qualified)}銘柄")
     print(f"    - FlowScore 70以上: {high_count}銘柄")
     print(f"    - FlowScore 40以上: {medium_count}銘柄")
-    print("\n📊 ステージ別:")
-    for stage, count in sorted(stage_counts.items(), key=lambda x: x[1], reverse=True):
-        print(f"    - {stage}: {count}銘柄")
+    print("\n📊 LEVEL別:")
+    for lv, count in sorted(level_counts.items(), key=lambda x: int(x[0]), reverse=True):
+        print(f"    - LEVEL {lv}: {count}銘柄")
     
     if sorted_qualified:
         print("\n🎯 上位10銘柄:")
         for ticker, info in list(sorted_qualified.items())[:10]:
-            print(f"  [{info['stage']}] {ticker} {info['name']}: FlowScore={info['flow_score']}, {info['state']} | {info['market_cap_oku']}億円")
+            print(f"  [LEVEL {info.get('level', 0)}] {ticker} {info['name']}: FlowScore={info['flow_score']}, {info['state']} | {info['market_cap_oku']}億円")
     else:
         print("\n📭 本日は候補銘柄がありませんでした")
 
