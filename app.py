@@ -1,9 +1,12 @@
 """
-源太AI🤖ハゲタカSCOPE - 統合版
+HAGETAKA SCOPE - M&A候補検知ツール
 - ログイン機能（共通パスワード or 登録済みメールアドレス）
-- 出来高急動モニター（GitHub Actionsで自動更新）
+- FlowScore（吸収観測の強度）によるM&A候補検知
 - 利用者ごとのメール通知機能（Google Sheets永続化）
 - チャート表示機能（ローソク足・出来高・価格帯別売買高）
+
+※本ツールは市場データの可視化を目的とした補助ツールです。
+※銘柄推奨・売買助言ではありません。
 """
 
 import json
@@ -36,13 +39,27 @@ from cryptography.fernet import Fernet
 # 定数
 # ==========================================
 JST = pytz.timezone("Asia/Tokyo")
-RATIO_HIGH = 3.0
-RATIO_MEDIUM = 1.5
 MARKET_CAP_MIN = 300
 MARKET_CAP_MAX = 2000
 
+# FlowScore閾値
+FLOW_SCORE_HIGH = 70
+FLOW_SCORE_MEDIUM = 40
+
+# ステージ定義
+STAGE_COLORS = {
+    "発表待ち": "#E53935",  # 赤
+    "匂い": "#FF9800",      # オレンジ
+    "加速": "#FFC107",      # 黄色
+    "仕込み": "#4CAF50",    # 緑
+    "監視中": "#9E9E9E",    # グレー
+}
+
 # 共通ログインパスワード（初回用）
 MASTER_PASSWORD = "88888"
+
+# 免責文言
+DISCLAIMER_TEXT = "本ツールは市場データの可視化を目的とした補助ツールです。銘柄推奨・売買助言ではありません。最終判断は利用者ご自身で行ってください。"
 
 # ==========================================
 # 日本語銘柄名辞書
@@ -419,39 +436,45 @@ def calculate_volume_profile(df: pd.DataFrame, bins: int = 20) -> pd.DataFrame:
     return pd.DataFrame(volume_profile)
 
 
-def calculate_support_resistance(df: pd.DataFrame, window: int = 20) -> tuple:
-    """上値抵抗線・下値支持線を計算"""
-    if df.empty or len(df) < window:
-        return [], []
+def calculate_flow_state(df: pd.DataFrame, avg_volume: int = 0) -> dict:
+    """
+    チャート用のFlow状態を計算
+    """
+    if df.empty or len(df) < 20:
+        return {"state": "沈静", "absorption_days": []}
     
-    # 直近の高値・安値からトレンドラインを計算
-    recent_df = df.tail(window)
+    # 出来高倍率を計算
+    if avg_volume > 0:
+        df = df.copy()
+        df['volume_ratio'] = df['Volume'] / avg_volume
+    else:
+        avg_vol = df['Volume'].mean()
+        df = df.copy()
+        df['volume_ratio'] = df['Volume'] / avg_vol if avg_vol > 0 else 1.0
     
-    # 高値のピーク（上値抵抗線用）
-    high_peaks = []
-    for i in range(2, len(recent_df) - 2):
-        if (recent_df['High'].iloc[i] > recent_df['High'].iloc[i-1] and 
-            recent_df['High'].iloc[i] > recent_df['High'].iloc[i-2] and
-            recent_df['High'].iloc[i] > recent_df['High'].iloc[i+1] and 
-            recent_df['High'].iloc[i] > recent_df['High'].iloc[i+2]):
-            high_peaks.append((recent_df.index[i], recent_df['High'].iloc[i]))
+    # 価格変動率（絶対値）
+    df['price_change'] = abs(df['Close'].pct_change()) * 100
     
-    # 安値のボトム（下値支持線用）
-    low_bottoms = []
-    for i in range(2, len(recent_df) - 2):
-        if (recent_df['Low'].iloc[i] < recent_df['Low'].iloc[i-1] and 
-            recent_df['Low'].iloc[i] < recent_df['Low'].iloc[i-2] and
-            recent_df['Low'].iloc[i] < recent_df['Low'].iloc[i+1] and 
-            recent_df['Low'].iloc[i] < recent_df['Low'].iloc[i+2]):
-            low_bottoms.append((recent_df.index[i], recent_df['Low'].iloc[i]))
+    # 吸収観測日（出来高増加 & 価格安定）を検出
+    absorption_days = []
+    for i in range(1, len(df)):
+        vol_ratio = df['volume_ratio'].iloc[i]
+        price_change = df['price_change'].iloc[i]
+        
+        # 吸収条件: 出来高1.3倍以上 & 価格変動2%以下
+        if vol_ratio >= 1.3 and price_change <= 2.0:
+            absorption_days.append(df.index[i])
     
-    return high_peaks, low_bottoms
+    return {
+        "state": "吸収" if len(absorption_days) >= 2 else "観測中",
+        "absorption_days": absorption_days
+    }
 
 
-def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 0) -> go.Figure:
+def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 0, flow_data: dict = None) -> go.Figure:
     """
     ローソク足チャート・出来高・価格帯別売買高を作成
-    TradingView風の明るいデザイン
+    TradingView風の明るいデザイン（抵抗線・支持線なし）
     """
     df = fetch_chart_data(ticker, period)
     
@@ -461,34 +484,21 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
                           xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
         return fig
     
-    # 出来高倍率を計算
-    if avg_volume > 0:
-        df['volume_ratio'] = df['Volume'] / avg_volume
-    else:
-        df['volume_ratio'] = 1.0
+    # Flow状態を計算
+    flow_state = calculate_flow_state(df, avg_volume)
+    absorption_days = flow_state.get("absorption_days", [])
     
-    # 2日連続1.5倍以上の日を判定
-    df['spike'] = False
-    df['spike_consecutive'] = False
-    for i in range(1, len(df)):
-        if df['volume_ratio'].iloc[i] >= RATIO_MEDIUM and df['volume_ratio'].iloc[i-1] >= RATIO_MEDIUM:
-            df.loc[df.index[i], 'spike_consecutive'] = True
-            df.loc[df.index[i-1], 'spike_consecutive'] = True
-        if df['volume_ratio'].iloc[i] >= RATIO_MEDIUM:
-            df.loc[df.index[i], 'spike'] = True
+    # 出来高の色分け用データ
+    avg_vol = df['Volume'].tail(60).mean() if len(df) >= 60 else df['Volume'].mean()
     
     # 価格帯別売買高を計算
     volume_profile = calculate_volume_profile(df)
     
-    # 抵抗線・支持線を計算
-    high_peaks, low_bottoms = calculate_support_resistance(df)
-    
-    # サブプロット作成（チャート、出来高、価格帯別売買高）
-    # スマホ対応で価格帯別売買高の幅を調整
+    # サブプロット作成
     fig = make_subplots(
         rows=2, cols=2,
-        column_widths=[0.88, 0.12],  # 価格帯別売買高を狭く
-        row_heights=[0.65, 0.35],    # 出来高エリアを少し広く
+        column_widths=[0.88, 0.12],
+        row_heights=[0.65, 0.35],
         specs=[[{"rowspan": 1}, {"rowspan": 2}],
                [{"rowspan": 1}, None]],
         shared_xaxes=True,
@@ -504,8 +514,8 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
             high=df['High'],
             low=df['Low'],
             close=df['Close'],
-            increasing_line_color='#26A69A',  # 緑（上昇）
-            decreasing_line_color='#EF5350',  # 赤（下落）
+            increasing_line_color='#26A69A',
+            decreasing_line_color='#EF5350',
             increasing_fillcolor='#26A69A',
             decreasing_fillcolor='#EF5350',
             name='価格'
@@ -513,45 +523,33 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         row=1, col=1
     )
     
-    # 上値抵抗線
-    if len(high_peaks) >= 2:
-        resistance_price = max([p[1] for p in high_peaks[-2:]])
-        fig.add_hline(
-            y=resistance_price, 
-            line_dash="dash", 
-            line_color="#EF5350",
-            line_width=1.5,
-            annotation_text=f"上値抵抗 ¥{resistance_price:,.0f}",
-            annotation_position="top right",
-            annotation_font_size=10,
-            annotation_font_color="#EF5350",
-            row=1, col=1
-        )
-    
-    # 下値支持線
-    if len(low_bottoms) >= 2:
-        support_price = min([p[1] for p in low_bottoms[-2:]])
-        fig.add_hline(
-            y=support_price, 
-            line_dash="dash", 
-            line_color="#2196F3",
-            line_width=1.5,
-            annotation_text=f"下値支持 ¥{support_price:,.0f}",
-            annotation_position="bottom right",
-            annotation_font_size=10,
-            annotation_font_color="#2196F3",
-            row=1, col=1
-        )
+    # 吸収観測日にマーカーを追加（○記号）
+    for abs_day in absorption_days:
+        if abs_day in df.index:
+            fig.add_annotation(
+                x=abs_day,
+                y=df.loc[abs_day, 'High'] * 1.01,
+                text="○",
+                showarrow=False,
+                font=dict(size=12, color="#7E57C2"),
+                row=1, col=1
+            )
     
     # ===== 出来高バー =====
     colors = []
-    for i, row in df.iterrows():
-        if row['spike_consecutive']:
-            colors.append('#E53935')  # より濃い赤（2日連続1.5倍超）
-        elif row['spike']:
-            colors.append('#FF7043')  # より濃いオレンジ（1.5倍超）
+    for idx, row in df.iterrows():
+        vol_ratio = row['Volume'] / avg_vol if avg_vol > 0 else 1
+        price_change = abs(row['Close'] / row['Open'] - 1) * 100 if row['Open'] > 0 else 0
+        
+        # 吸収観測（出来高増 & 価格安定）
+        if vol_ratio >= 1.5 and price_change <= 1.5:
+            colors.append('#7E57C2')  # 紫（吸収観測）
+        elif vol_ratio >= 1.5:
+            colors.append('#FF7043')  # オレンジ（出来高増）
+        elif vol_ratio >= 1.2:
+            colors.append('#FFB74D')  # 薄いオレンジ
         else:
-            colors.append('#90A4AE')  # やや濃いグレー（通常）
+            colors.append('#90A4AE')  # グレー（通常）
     
     fig.add_trace(
         go.Bar(
@@ -560,32 +558,17 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
             marker_color=colors,
             marker_line_width=0,
             name='出来高',
-            opacity=0.9  # 少し濃く
+            opacity=0.9
         ),
         row=2, col=1
     )
     
-    # 2日連続スパイクの日に点線を追加
-    for i, (idx, row) in enumerate(df.iterrows()):
-        if row['spike_consecutive']:
-            # 出来高バーからローソク足に点線を引く
-            fig.add_shape(
-                type="line",
-                x0=idx, x1=idx,
-                y0=0, y1=1,
-                yref="paper",
-                line=dict(color="#E53935", width=1.5, dash="dot"),
-                opacity=0.6
-            )
-    
-    # ===== 価格帯別売買高（横棒グラフ） =====
+    # ===== 価格帯別売買高 =====
     if not volume_profile.empty:
         max_vol = volume_profile['volume'].max()
-        # ボリュームに応じてグラデーション色を設定
         vp_colors = []
         for _, row in volume_profile.iterrows():
             intensity = row['volume'] / max_vol if max_vol > 0 else 0
-            # 薄い青→濃い紫のグラデーション
             r = int(126 + (63 - 126) * intensity)
             g = int(87 + (81 - 87) * intensity)
             b = int(194 + (181 - 194) * intensity)
@@ -603,19 +586,19 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
             row=1, col=2
         )
     
-    # ===== レイアウト設定（TradingView風・明るいテーマ・スマホ対応） =====
+    # ===== レイアウト設定 =====
     fig.update_layout(
-        title=None,  # タイトルは別途HTML表示するので削除
-        height=500,  # スマホでも見やすい高さ
+        title=None,
+        height=500,
         showlegend=False,
         paper_bgcolor='#FFFFFF',
         plot_bgcolor='#FAFAFA',
         font=dict(family="Arial, sans-serif", size=11, color='#333333'),
-        margin=dict(l=10, r=10, t=30, b=30),  # マージンを小さく
+        margin=dict(l=10, r=10, t=30, b=30),
         xaxis_rangeslider_visible=False,
     )
     
-    # ===== ローソク足エリア（明るいクリーム系） =====
+    # ローソク足エリア
     fig.update_yaxes(
         title_text="",
         gridcolor='#E8E8E8',
@@ -633,7 +616,7 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         row=1, col=1
     )
     
-    # ===== 出来高エリア（グレー系で差別化） =====
+    # 出来高エリア（背景色で差別化）
     fig.update_yaxes(
         title_text="",
         gridcolor='#D0D0D0',
@@ -650,27 +633,18 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         row=2, col=1
     )
     
-    # 出来高エリアの背景色を変更
     fig.add_shape(
         type="rect",
         xref="paper", yref="paper",
         x0=0, y0=0, x1=0.88, y1=0.35,
-        fillcolor="rgba(240, 244, 248, 0.8)",  # 薄いブルーグレー
+        fillcolor="rgba(240, 244, 248, 0.8)",
         line=dict(width=0),
         layer="below"
     )
     
     # 価格帯別売買高エリア
-    fig.update_yaxes(
-        showticklabels=False,
-        showgrid=False,
-        row=1, col=2
-    )
-    fig.update_xaxes(
-        showticklabels=False,
-        showgrid=False,
-        row=1, col=2
-    )
+    fig.update_yaxes(showticklabels=False, showgrid=False, row=1, col=2)
+    fig.update_xaxes(showticklabels=False, showgrid=False, row=1, col=2)
     
     return fig
 
@@ -679,6 +653,13 @@ def show_chart_modal(ticker: str, stock_info: dict):
     """チャートモーダルを表示（スマホ対応）"""
     name = stock_info.get("name", ticker)
     avg_volume = stock_info.get("avg_volume", 0)
+    flow_score = stock_info.get("flow_score", 0)
+    stage = stock_info.get("stage", "監視中")
+    state = stock_info.get("state", "観測中")
+    flow_details = stock_info.get("flow_details", {})
+    
+    # ステージ色
+    stage_color = STAGE_COLORS.get(stage, "#9E9E9E")
     
     # 戻るボタン
     if st.button("← 一覧に戻る", key="back_btn"):
@@ -688,7 +669,7 @@ def show_chart_modal(ticker: str, stock_info: dict):
     
     st.markdown("---")
     
-    # 期間選択（スマホ対応で横並び）
+    # 期間選択
     period_cols = st.columns(4)
     periods = [("1ヶ月", "1mo"), ("3ヶ月", "3mo"), ("6ヶ月", "6mo"), ("1年", "1y")]
     for i, (label, period_val) in enumerate(periods):
@@ -698,15 +679,9 @@ def show_chart_modal(ticker: str, stock_info: dict):
                 st.rerun()
     
     period = st.session_state.get("chart_period", "6mo")
-    
-    # 現在選択中の期間をハイライト
     period_labels = {"1mo": "1ヶ月", "3mo": "3ヶ月", "6mo": "6ヶ月", "1y": "1年"}
     
-    # 昨日の倍率
-    ratio_yesterday = stock_info.get('ratio_yesterday')
-    ratio_yesterday_text = f"（昨日: {ratio_yesterday}倍）" if ratio_yesterday else ""
-    
-    # 銘柄情報表示（スマホ対応）
+    # 銘柄情報表示（FlowScore対応）
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                 border-radius: 12px; padding: 1rem; margin: 1rem 0; color: white;">
@@ -717,33 +692,46 @@ def show_chart_modal(ticker: str, stock_info: dict):
             <div style="font-size: 2rem; font-weight: bold;">
                 ¥{stock_info.get('price', 0):,.0f}
             </div>
-            <div style="font-size: 0.9rem; margin-top: 0.3rem;">
-                出来高倍率: <strong>{stock_info.get('ratio', 0)}倍</strong> {ratio_yesterday_text}
+            <div style="display: flex; justify-content: center; gap: 1rem; margin-top: 0.5rem;">
+                <div style="background: rgba(255,255,255,0.2); padding: 0.3rem 0.8rem; border-radius: 20px;">
+                    吸収観測: <strong>{flow_score}</strong>
+                </div>
+                <div style="background: {stage_color}; padding: 0.3rem 0.8rem; border-radius: 20px;">
+                    {stage}
+                </div>
             </div>
-            <div style="font-size: 0.8rem; margin-top: 0.2rem; opacity: 0.9;">
-                期間: {period_labels.get(period, '6ヶ月')}
+            <div style="font-size: 0.8rem; margin-top: 0.3rem; opacity: 0.9;">
+                状態: {state} | 期間: {period_labels.get(period, '6ヶ月')}
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
+    # FlowScore詳細（折りたたみ）
+    with st.expander("📊 吸収観測の詳細"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("出来高異常度", f"{flow_details.get('vol_anomaly', 0)}")
+        with col2:
+            st.metric("価格安定度", f"{flow_details.get('price_stability', 0)}")
+        with col3:
+            st.metric("吸収度", f"{flow_details.get('absorption', 0)}")
+    
     # チャート表示
     with st.spinner("チャートを読み込み中..."):
-        fig = create_chart(ticker, name, period, avg_volume)
+        fig = create_chart(ticker, name, period, avg_volume, flow_details)
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     
-    # 凡例（スマホ対応で折り返し）
+    # 凡例
     st.markdown("""
     <div style="background: #F5F5F5; border-radius: 8px; padding: 0.8rem; font-size: 0.75rem; color: #666; line-height: 1.8;">
         <strong>📊 チャートの見方</strong><br>
         <span style="color: #26A69A;">■</span> 陽線（上昇）　
         <span style="color: #EF5350;">■</span> 陰線（下落）<br>
-        <span style="color: #EF5350;">■</span> 出来高2日連続1.5倍超　
-        <span style="color: #FF9800;">■</span> 出来高1.5倍超　
-        <span style="color: #B0BEC5;">■</span> 通常<br>
-        <span style="color: #EF5350;">- - -</span> 上値抵抗線　
-        <span style="color: #2196F3;">- - -</span> 下値支持線　
-        <span style="color: #7E57C2;">■</span> 価格帯別売買高
+        <span style="color: #7E57C2;">■</span> 出来高：吸収観測（出来高増&価格安定）　
+        <span style="color: #FF7043;">■</span> 出来高増　
+        <span style="color: #90A4AE;">■</span> 通常<br>
+        <span style="color: #7E57C2;">○</span> 吸収観測日（条件一致）
     </div>
     """, unsafe_allow_html=True)
 
@@ -990,26 +978,36 @@ def send_spike_alert(email: str, app_password: str, stocks: List[Dict], updated_
 # カード表示
 # ==========================================
 def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
-    ratio = d["ratio"]
-    card_class = "high" if ratio >= RATIO_HIGH else ("medium" if ratio >= RATIO_MEDIUM else "")
-    ratio_class = "high" if ratio >= RATIO_HIGH else ("medium" if ratio >= RATIO_MEDIUM else "normal")
+    """銘柄カードを表示（FlowScore対応）"""
+    flow_score = d.get("flow_score", 0)
+    stage = d.get("stage", "監視中")
+    state = d.get("state", "観測中")
+    tags = d.get("tags", [])
+    
+    # FlowScoreに基づくカードクラス
+    if flow_score >= FLOW_SCORE_HIGH:
+        card_class = "high"
+        score_class = "high"
+    elif flow_score >= FLOW_SCORE_MEDIUM:
+        card_class = "medium"
+        score_class = "medium"
+    else:
+        card_class = ""
+        score_class = "normal"
+    
+    # ステージ色
+    stage_color = STAGE_COLORS.get(stage, "#9E9E9E")
     
     code = ticker.replace(".T", "")
     url = f"https://finance.yahoo.co.jp/quote/{code}.T"
     
-    # 日本語名を優先、なければ英語名、なければ銘柄コード
+    # 日本語名
     name_jp = TICKER_NAMES_JP.get(ticker, d.get('name', code))
     
-    cap_badge = ""
-    if show_cap_badge:
-        if d.get("in_cap_range"):
-            cap_badge = '<span class="cap-badge in">対象</span>'
-        else:
-            cap_badge = '<span class="cap-badge out">範囲外</span>'
-    
-    # 昨日の倍率表示（あれば）
-    ratio_yesterday = d.get('ratio_yesterday', None)
-    ratio_yesterday_html = f'<span style="font-size:0.7rem;color:#888;margin-left:4px;">(昨日:{ratio_yesterday}x)</span>' if ratio_yesterday else ''
+    # タグ表示（最大3つ）
+    tags_html = ""
+    for tag in tags[:3]:
+        tags_html += f'<span style="background:#E8EAF6;color:#5C6BC0;padding:2px 6px;border-radius:4px;font-size:0.65rem;margin-right:4px;">{tag}</span>'
     
     st.markdown(f"""
     <div class="spike-card {card_class}">
@@ -1018,14 +1016,18 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
                 <a href="{url}" target="_blank">{ticker}</a>
                 <span style="font-size:0.75rem;color:#888;margin-left:6px;">{str(name_jp)[:12]}</span>
             </div>
-            <div class="ratio-badge {ratio_class}">{ratio}x{ratio_yesterday_html}</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span style="background:{stage_color};color:white;padding:3px 10px;border-radius:12px;font-size:0.75rem;font-weight:600;">{stage}</span>
+                <div class="ratio-badge {score_class}">{flow_score}</div>
+            </div>
         </div>
         <div class="card-body">
             <div><span class="info-label">現在値</span><br><span class="info-value" style="color:#C41E3A;font-weight:600;">¥{d['price']:,.0f}</span></div>
-            <div><span class="info-label">時価総額</span><br><span class="info-value">{d['market_cap_oku']:,}億円{cap_badge}</span></div>
-            <div><span class="info-label">当日出来高</span><br><span class="info-value">{d['volume']:,}</span></div>
-            <div><span class="info-label">252日平均</span><br><span class="info-value">{d['avg_volume']:,}</span></div>
+            <div><span class="info-label">状態</span><br><span class="info-value">{state}</span></div>
+            <div><span class="info-label">時価総額</span><br><span class="info-value">{d['market_cap_oku']:,}億円</span></div>
+            <div><span class="info-label">出来高倍率</span><br><span class="info-value">{d.get('vol_ratio', 0)}x</span></div>
         </div>
+        <div style="padding:0 0.8rem 0.5rem;font-size:0.7rem;">{tags_html}</div>
     </div>
     """, unsafe_allow_html=True)
     
@@ -1138,6 +1140,11 @@ def show_login_page():
 def show_main_page():
     """メインアプリ画面を表示"""
     
+    # 初回同意チェック
+    if not st.session_state.get("disclaimer_agreed"):
+        show_disclaimer_page()
+        return
+    
     # チャート表示モードの場合
     if st.session_state.get("show_chart") and st.session_state.get("selected_ticker"):
         ticker = st.session_state["selected_ticker"]
@@ -1155,20 +1162,26 @@ def show_main_page():
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.title("🦅 源太AI ハゲタカSCOPE")
+        st.title("🦅 HAGETAKA SCOPE")
     
-    st.markdown(f'<p class="subtitle">中型株（{MARKET_CAP_MIN}億〜{MARKET_CAP_MAX}億円）の出来高急動を自動検知</p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="subtitle">M&A候補の早期検知ツール（時価総額{MARKET_CAP_MIN}億〜{MARKET_CAP_MAX}億円）</p>', unsafe_allow_html=True)
+    
+    # 免責表示（最小化可能）
+    with st.expander("⚠️ ご利用にあたって", expanded=False):
+        st.markdown(f"""
+        <div style="font-size:0.8rem;color:#666;line-height:1.6;">
+            {DISCLAIMER_TEXT}
+        </div>
+        """, unsafe_allow_html=True)
     
     # ログイン方法に応じたメッセージ
     if st.session_state.get("login_type") == "master":
-        # 共通パスワードでログインした場合
         st.markdown("""
         <div class="hint-box">
             💡 <strong>ヒント</strong>：通知設定タブでメール設定を保存すると、次回からメールアドレスでログインでき、設定が自動で読み込まれます！
         </div>
         """, unsafe_allow_html=True)
     elif st.session_state.get("login_type") == "email":
-        # メールアドレスでログインした場合
         email = st.session_state.get("email_address", "")
         masked_email = email[:3] + "***" + email[email.find("@"):] if email and "@" in email else ""
         st.markdown(f"""
@@ -1182,15 +1195,15 @@ def show_main_page():
     data = load_data()
     
     # タブ
-    tab1, tab2 = st.tabs(["📊 出来高急動", "🔔 通知設定"])
+    tab1, tab2 = st.tabs(["📊 M&A候補", "🔔 通知設定"])
     
     # ==========================================
-    # タブ1: 出来高急動
+    # タブ1: M&A候補
     # ==========================================
     with tab1:
         if data:
             updated_at = data.get("updated_at", "不明")
-            filter_desc = data.get("filter_description", "")
+            stage_counts = data.get("stage_counts", {})
             
             st.markdown(f"""
             <div class="update-info">
@@ -1199,26 +1212,27 @@ def show_main_page():
             </div>
             """, unsafe_allow_html=True)
             
-            # 新フィルター条件の説明
+            # FlowScore説明
             st.markdown("""
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                         border-radius: 10px; padding: 0.8rem; margin-bottom: 1rem; color: white; font-size: 0.8rem;">
-                <strong>🎯 厳選フィルター適用中</strong><br>
-                ① 過去100日間、出来高が1.5倍以内で静かだった銘柄<br>
-                ② 直近2日連続で1.5倍を突破した銘柄のみ表示
+                <strong>🎯 吸収観測による候補抽出</strong><br>
+                出来高増加＋価格安定（＝大口の静かな買い集め）を検知
             </div>
             """, unsafe_allow_html=True)
             
-            # レジェンド
+            # ステージ凡例
             st.markdown("""
-            <div style="display:flex;justify-content:center;gap:1.2rem;margin-bottom:0.8rem;font-size:0.75rem;color:#666;">
-                <span>🔴 3倍以上</span>
-                <span>🟠 1.5倍以上</span>
+            <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:0.8rem;margin-bottom:0.8rem;font-size:0.7rem;">
+                <span style="background:#E53935;color:white;padding:2px 8px;border-radius:10px;">発表待ち</span>
+                <span style="background:#FF9800;color:white;padding:2px 8px;border-radius:10px;">匂い</span>
+                <span style="background:#FFC107;color:white;padding:2px 8px;border-radius:10px;">加速</span>
+                <span style="background:#4CAF50;color:white;padding:2px 8px;border-radius:10px;">仕込み</span>
             </div>
             """, unsafe_allow_html=True)
             
             # フィルター切替
-            show_all = st.checkbox("従来のフィルター表示（時価総額のみ）", value=False)
+            show_all = st.checkbox("全銘柄を表示", value=False)
             
             if show_all:
                 display_data = data.get("all_data", {})
@@ -1226,31 +1240,30 @@ def show_main_page():
                 display_data = data.get("data", {})
             
             # 統計
-            spike_high = len([v for v in display_data.values() if v["ratio"] >= RATIO_HIGH])
-            spike_medium = len([v for v in display_data.values() if v["ratio"] >= RATIO_MEDIUM])
+            high_flow = len([v for v in display_data.values() if v.get("flow_score", 0) >= FLOW_SCORE_HIGH])
+            medium_flow = len([v for v in display_data.values() if v.get("flow_score", 0) >= FLOW_SCORE_MEDIUM])
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.markdown(f'<div class="stat-box"><div class="stat-value high">{spike_high}</div><div class="stat-label">🔴 3倍以上</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="stat-box"><div class="stat-value high">{high_flow}</div><div class="stat-label">FlowScore 70+</div></div>', unsafe_allow_html=True)
             with col2:
-                st.markdown(f'<div class="stat-box"><div class="stat-value medium">{spike_medium}</div><div class="stat-label">🟠 1.5倍以上</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="stat-box"><div class="stat-value medium">{medium_flow}</div><div class="stat-label">FlowScore 40+</div></div>', unsafe_allow_html=True)
             with col3:
-                st.markdown(f'<div class="stat-box"><div class="stat-value total">{len(display_data)}</div><div class="stat-label">銘柄数</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="stat-box"><div class="stat-value total">{len(display_data)}</div><div class="stat-label">候補数</div></div>', unsafe_allow_html=True)
             
             st.markdown("")
             
-            # 表示フィルター
-            filter_opt = st.radio("", ["すべて", "🔴 3倍以上", "🟠 1.5倍以上"], horizontal=True, label_visibility="collapsed")
+            # ステージフィルター
+            stage_options = ["すべて"] + list(STAGE_COLORS.keys())
+            filter_stage = st.radio("ステージ", stage_options, horizontal=True, label_visibility="collapsed")
             
-            if filter_opt == "🔴 3倍以上":
-                display_data = {k: v for k, v in display_data.items() if v["ratio"] >= RATIO_HIGH}
-            elif filter_opt == "🟠 1.5倍以上":
-                display_data = {k: v for k, v in display_data.items() if v["ratio"] >= RATIO_MEDIUM}
+            if filter_stage != "すべて":
+                display_data = {k: v for k, v in display_data.items() if v.get("stage") == filter_stage}
             
             # カード表示
             if display_data:
                 for ticker, d in display_data.items():
-                    render_card(ticker, d, show_cap_badge=show_all)
+                    render_card(ticker, d)
             else:
                 st.info("該当する銘柄がありません")
             
@@ -1258,11 +1271,11 @@ def show_main_page():
             email = st.session_state.get("email_address", "")
             app_password = st.session_state.get("app_password", "")
             
-            notify_stocks = [{"ticker": k, **v} for k, v in display_data.items() if v["ratio"] >= RATIO_MEDIUM]
+            notify_stocks = [{"ticker": k, **v} for k, v in display_data.items() if v.get("flow_score", 0) >= FLOW_SCORE_MEDIUM]
             
             if notify_stocks and email and app_password:
                 st.markdown("---")
-                if st.button(f"📧 検知銘柄（{len(notify_stocks)}件）をメール送信"):
+                if st.button(f"📧 候補銘柄（{len(notify_stocks)}件）をメール送信"):
                     with st.spinner("送信中..."):
                         if send_spike_alert(email, app_password, notify_stocks, updated_at):
                             st.success(f"✅ 送信しました！")
@@ -1374,6 +1387,42 @@ def show_main_page():
 
 
 # ==========================================
+# 免責同意画面
+# ==========================================
+def show_disclaimer_page():
+    """初回利用時の免責同意画面"""
+    st.markdown("""
+    <div style="text-align: center; margin: 2rem 0;">
+        <h2>🦅 HAGETAKA SCOPE</h2>
+        <p style="color: #666;">ご利用前に以下をご確認ください</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown(f"""
+    <div style="background: #FFF3E0; border: 1px solid #FFB74D; border-radius: 10px; padding: 1.5rem; margin: 1rem 0;">
+        <h4 style="color: #E65100; margin-top: 0;">⚠️ ご利用にあたっての注意事項</h4>
+        <p style="font-size: 0.9rem; line-height: 1.8; color: #333;">
+            {DISCLAIMER_TEXT}
+        </p>
+        <ul style="font-size: 0.85rem; color: #555; line-height: 1.8;">
+            <li>本ツールは「市場データの可視化」を目的としています</li>
+            <li>銘柄の推奨や売買の助言は一切行いません</li>
+            <li>投資判断は必ずご自身の責任で行ってください</li>
+            <li>表示される情報の正確性を保証するものではありません</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 同意チェックボックス
+    agree1 = st.checkbox("本ツールは投資助言ではないことを理解しました")
+    agree2 = st.checkbox("最終判断は自己責任で行うことを理解しました")
+    
+    if st.button("同意して利用開始", use_container_width=True, disabled=not (agree1 and agree2)):
+        st.session_state["disclaimer_agreed"] = True
+        st.rerun()
+
+
+# ==========================================
 # メイン処理
 # ==========================================
 # セッション初期化
@@ -1387,6 +1436,8 @@ if "selected_ticker" not in st.session_state:
     st.session_state["selected_ticker"] = None
 if "chart_period" not in st.session_state:
     st.session_state["chart_period"] = "6mo"
+if "disclaimer_agreed" not in st.session_state:
+    st.session_state["disclaimer_agreed"] = False
 
 # ページ表示
 if st.session_state.get("logged_in"):
