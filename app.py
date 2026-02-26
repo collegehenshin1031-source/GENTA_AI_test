@@ -1,7 +1,7 @@
 """
 HAGETAKA SCOPE - M&A候補検知ツール
 - ログイン機能（共通パスワード or 登録済みメールアドレス）
-- FlowScore（要監視スコア）によるM&A候補検知
+- FlowScore（FlowScoreの強度）によるM&A候補検知
 - 利用者ごとのメール通知機能（Google Sheets永続化）
 - チャート表示機能（ローソク足・出来高・価格帯別売買高）
 
@@ -46,22 +46,13 @@ MARKET_CAP_MAX = 2000
 FLOW_SCORE_HIGH = 70
 FLOW_SCORE_MEDIUM = 40
 
-# LEVEL色（数字のみ表示）
+# LEVELカラー（表示は数字のみ）
 LEVEL_COLORS = {
-    4: "#E53935",  # 赤
+    4: "#C41E3A",  # 赤
     3: "#FF9800",  # オレンジ
-    2: "#FFC107",  # 黄色
-    1: "#4CAF50",  # 緑
-    0: "#9E9E9E",  # グレー（条件弱い/該当なし）
-}
-
-# 状態ラベル（初心者向け・非助言）
-STATE_COLORS = {
-    "要監視": "#7E57C2",  # 紫
-    "拡散": "#FF7043",    # オレンジ
-    "沈静": "#90A4AE",    # グレー
-    "観測中": "#9E9E9E",  # グレー
-    "通常": "#9E9E9E",    # グレー
+    2: "#FFC107",  # 黄
+    1: "#5C6BC0",  # 青紫
+    0: "#9E9E9E",  # グレー
 }
 
 # 共通ログインパスワード（初回用）
@@ -146,311 +137,192 @@ st.set_page_config(
 # ==========================================
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
 #MainMenu, footer, header, .stDeployButton {display: none !important;}
 
-/* 背景：白ベース */
-div[data-testid="stAppViewContainer"] {
-    background: linear-gradient(180deg, #FFFFFF 0%, #FFF5F5 100%) !important;
+html, body, [class*="css"]  { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; }
+
+/* App background */
+div[data-testid="stAppViewContainer"]{
+  background: radial-gradient(1200px 600px at 10% 0%, rgba(92,107,192,0.10), transparent 60%),
+              radial-gradient(900px 450px at 95% 10%, rgba(196,30,58,0.10), transparent 55%),
+              linear-gradient(180deg, #FFFFFF 0%, #FAFBFF 60%, #FFFFFF 100%) !important;
 }
 
-.main .block-container {
-    max-width: 800px !important;
-    padding: 1rem 1rem 3rem 1rem !important;
+.main .block-container{
+  max-width: 1080px !important;
+  padding: 1.0rem 1.2rem 3.2rem 1.2rem !important;
 }
 
-/* タイトル：赤 */
-h1 {
-    text-align: center !important;
-    font-size: 1.6rem !important;
-    color: #C41E3A !important;
-    font-weight: 800 !important;
+/* Top title */
+h1{
+  text-align:center !important;
+  font-size: 1.55rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+  color: #0F172A !important;
+  margin-bottom: .2rem !important;
+}
+.subtitle{
+  text-align:center;
+  color:#64748B;
+  font-size:.85rem;
+  margin-bottom: 1.1rem;
 }
 
-.subtitle {
-    text-align: center;
-    color: #666;
-    font-size: 0.8rem;
-    margin-bottom: 1rem;
+/* Tabs */
+.stTabs [data-baseweb="tab-list"]{
+  justify-content:center !important;
+  background: rgba(255,255,255,0.75) !important;
+  backdrop-filter: blur(8px);
+  padding: .35rem !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(15,23,42,0.08) !important;
+  box-shadow: 0 10px 30px rgba(15,23,42,0.06) !important;
+  margin-bottom: 1.0rem !important;
+}
+.stTabs [data-baseweb="tab"]{
+  padding: .55rem 1.05rem !important;
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+  color: #475569 !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"]{
+  background: linear-gradient(135deg, #0F172A 0%, #334155 100%) !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] p{
+  color: #FFFFFF !important;
 }
 
-/* タブ */
-.stTabs [data-baseweb="tab-list"] {
-    justify-content: center !important;
-    background-color: #FFF !important;
-    padding: 0.3rem !important;
-    border-radius: 10px !important;
-    margin-bottom: 1rem !important;
-    box-shadow: 0 2px 8px rgba(196, 30, 58, 0.1) !important;
+/* Cards */
+.spike-card{
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(8px);
+  border-radius: 16px;
+  padding: 1rem;
+  margin-bottom: .75rem;
+  border: 1px solid rgba(15,23,42,0.08);
+  box-shadow: 0 14px 40px rgba(15,23,42,0.08);
+}
+.spike-card.high{
+  border-color: rgba(196,30,58,0.22);
+  box-shadow: 0 16px 44px rgba(196,30,58,0.12);
+}
+.spike-card.medium{
+  border-color: rgba(255,152,0,0.22);
+  box-shadow: 0 16px 44px rgba(255,152,0,0.10);
 }
 
-.stTabs [data-baseweb="tab"] {
-    padding: 0.5rem 1rem !important;
-    border-radius: 6px !important;
-    font-weight: 600 !important;
-    color: #666 !important;
+.card-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:.7rem;
+  margin-bottom: .55rem;
 }
 
-/* 選択中のタブ - 白文字 */
-.stTabs [data-baseweb="tab"][aria-selected="true"] {
-    background: linear-gradient(135deg, #C41E3A 0%, #E63946 100%) !important;
-    color: #FFFFFF !important;
+.ticker-name a{
+  font-weight: 800;
+  color:#0F172A !important;
+  text-decoration:none;
+}
+.ticker-name a:hover{ text-decoration: underline; }
+
+.ratio-badge{
+  min-width: 46px;
+  text-align:center;
+  padding: .28rem .6rem;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: .82rem;
+  border: 1px solid rgba(15,23,42,0.10);
+  color:#0F172A;
+  background: rgba(255,255,255,0.8);
+}
+.ratio-badge.high{
+  color:#FFFFFF;
+  border-color: rgba(196,30,58,0.25);
+  background: linear-gradient(135deg, #C41E3A 0%, #E63946 100%);
+}
+.ratio-badge.medium{
+  color:#0F172A;
+  border-color: rgba(255,152,0,0.25);
+  background: linear-gradient(135deg, rgba(255,152,0,0.18) 0%, rgba(255,193,7,0.18) 100%);
 }
 
-.stTabs [data-baseweb="tab"][aria-selected="true"] p {
-    color: #FFFFFF !important;
+.card-body{
+  display:grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .8rem;
+  margin-top: .2rem;
 }
 
-/* カード：白背景・赤ボーダー */
-.spike-card {
-    background: #FFFFFF;
-    border-radius: 10px;
-    padding: 0.9rem;
-    margin-bottom: 0.6rem;
-    border-left: 4px solid #C41E3A;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-}
-
-.spike-card.high {
-    border-left-color: #C41E3A;
-    background: linear-gradient(90deg, rgba(196,30,58,0.08) 0%, #FFFFFF 100%);
-}
-
-.spike-card.medium {
-    border-left-color: #FFB347;
-    background: linear-gradient(90deg, rgba(255,179,71,0.08) 0%, #FFFFFF 100%);
-}
-
-.card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.4rem;
-}
-
-.ticker-name {
-    font-size: 1rem;
-    font-weight: bold;
-    color: #333;
-}
-
-.ticker-name a { color: inherit; text-decoration: none; }
-.ticker-name a:hover { color: #C41E3A; }
-
-.ratio-badge {
-    font-size: 1.3rem;
-    font-weight: bold;
-}
-
-.ratio-badge.high { color: #C41E3A; }
-.ratio-badge.medium { color: #FF8C00; }
-.ratio-badge.normal { color: #28a745; }
-
-.card-body {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.4rem;
-    font-size: 0.8rem;
-}
-
-.info-label { color: #888; font-size: 0.7rem; }
-.info-value { color: #333; }
-
-/* 統計ボックス */
-.stat-box {
-    background: #FFFFFF;
-    border-radius: 10px;
-    padding: 0.8rem;
-    text-align: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    border: 1px solid #F0F0F0;
-}
-
-.stat-value { font-size: 1.6rem; font-weight: bold; }
-.stat-value.high { color: #C41E3A; }
-.stat-value.medium { color: #FF8C00; }
-.stat-value.total { color: #C41E3A; }
-.stat-label { font-size: 0.7rem; color: #666; }
-
-/* ボタン：赤グラデーション・白文字 */
-.stButton > button {
-    background: linear-gradient(135deg, #C41E3A 0%, #E63946 100%) !important;
-    color: #FFFFFF !important;
-    font-weight: 600 !important;
-    border: none !important;
-    border-radius: 8px !important;
-    box-shadow: 0 2px 8px rgba(196, 30, 58, 0.3) !important;
-}
-
-.stButton > button:hover {
-    background: linear-gradient(135deg, #A01830 0%, #C41E3A 100%) !important;
-    color: #FFFFFF !important;
-}
-
-.stButton > button:active {
-    color: #FFFFFF !important;
-}
-
-.stButton > button p {
-    color: #FFFFFF !important;
-}
-
-/* テキスト色 */
-p, span, label, div { color: #333; }
-
-/* 更新情報ボックス */
-.update-info {
-    text-align: center;
-    padding: 0.8rem;
-    background: linear-gradient(135deg, #FFF5F5 0%, #FFFFFF 100%);
-    border-radius: 8px;
-    margin-bottom: 1rem;
-    font-size: 0.8rem;
-    border: 1px solid #FFE0E0;
-    color: #333;
-}
-
-.cap-badge {
-    display: inline-block;
-    padding: 1px 5px;
-    border-radius: 4px;
-    font-size: 0.65rem;
-    margin-left: 4px;
-}
-.cap-badge.in { background: rgba(196,30,58,0.1); color: #C41E3A; }
-.cap-badge.out { background: rgba(128,128,128,0.1); color: #888; }
-
-/* チェックボックス */
-.stCheckbox label span { color: #333 !important; }
-
-/* ラジオボタン */
-.stRadio label span { color: #333 !important; }
-
-/* 入力フィールド */
-.stTextInput input {
-    background: #FFFFFF !important;
-    color: #333 !important;
-    border: 1px solid #DDD !important;
-}
-
-/* expander */
-.streamlit-expanderHeader {
-    background: #FFF5F5 !important;
-    color: #333 !important;
-}
-
-/* ログイン画面 */
-.login-container {
-    max-width: 400px;
-    margin: 0 auto;
-    padding: 2rem;
-    background: #FFFFFF;
-    border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(196, 30, 58, 0.15);
-    text-align: center;
-}
-
-.login-title {
-    color: #C41E3A;
-    font-size: 1.2rem;
-    font-weight: bold;
-    margin-bottom: 1.5rem;
-}
-
-.login-error {
-    color: #C41E3A;
-    background: #FFE0E0;
-    padding: 0.5rem;
-    border-radius: 8px;
-    margin-bottom: 1rem;
-    font-size: 0.85rem;
-}
-
-/* ヒントボックス */
-.hint-box {
-    background: linear-gradient(135deg, #E8F4FD 0%, #F0F8FF 100%);
-    border: 1px solid #B0D4F1;
-    border-radius: 8px;
-    padding: 1rem;
-    margin: 1rem 0;
-    font-size: 0.85rem;
-    color: #333;
-}
-
-/* 成功ボックス */
-.success-box {
-    background: linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%);
-    border: 1px solid #A5D6A7;
-    border-radius: 8px;
-    padding: 1rem;
-    margin: 1rem 0;
-    font-size: 0.85rem;
-    color: #333;
-}
-
-/* ===== LEVELガイド（画面を邪魔しない・スクロール追従） ===== */
-#stickyGuide {
-  position: sticky;
-  top: 8px;
-  z-index: 999;
-  margin: 0.2rem 0 0.8rem 0;
-}
-#stickyGuide details {
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid #F0D7D7;
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(196, 30, 58, 0.08);
-  padding: 0.4rem 0.6rem;
-}
-#stickyGuide summary {
-  cursor: pointer;
-  list-style: none;
+.info-label{
+  font-size: .72rem;
+  color:#64748B;
   font-weight: 700;
-  color: #C41E3A;
-  font-size: 0.85rem;
+  letter-spacing: .02em;
 }
-#stickyGuide summary::-webkit-details-marker { display: none; }
-.guideBody {
-  margin-top: 0.6rem;
-  font-size: 0.78rem;
-  color: #333;
+.info-value{
+  font-size: .93rem;
+  color:#0F172A;
+  font-weight: 700;
 }
-.guideNote {
-  background: #FFF5F5;
-  border: 1px solid #F0D7D7;
-  border-radius: 10px;
-  padding: 0.5rem 0.6rem;
-  margin-bottom: 0.6rem;
-  color: #444;
-  line-height: 1.6;
+
+/* Stat boxes */
+.stat-box{
+  background: rgba(255,255,255,0.88);
+  border: 1px solid rgba(15,23,42,0.08);
+  border-radius: 14px;
+  padding: .9rem .9rem;
+  box-shadow: 0 10px 30px rgba(15,23,42,0.06);
+  text-align:center;
 }
-.guideGrid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.6rem;
+.stat-value{
+  font-size: 1.55rem;
+  font-weight: 900;
+  line-height: 1.1;
 }
-.lv {
-  display: inline-block;
-  color: #fff;
-  padding: 2px 10px;
+.stat-value.high{ color:#C41E3A; }
+.stat-value.medium{ color:#FF9800; }
+.stat-value.total{ color:#0F172A; }
+.stat-label{ color:#64748B; font-size:.78rem; font-weight:700; margin-top:.25rem; }
+
+/* Pill buttons (LEVEL filter + chart period) */
+.pill-row{ display:flex; gap:.45rem; flex-wrap:wrap; }
+.pill{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:.42rem .75rem;
   border-radius: 999px;
   font-weight: 800;
-  font-size: 0.75rem;
-  margin-bottom: 0.25rem;
+  font-size:.78rem;
+  border: 1px solid rgba(15,23,42,0.14);
+  background: rgba(255,255,255,0.75);
+  color:#334155;
 }
-.lvText { font-weight: 700; margin-bottom: 0.15rem; }
-.lvDo { color: #555; }
-.guideLegend { margin-top: 0.6rem; }
-.guideLegend .tag {
-  display: inline-block;
-  color: #fff;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-weight: 800;
-  font-size: 0.72rem;
-  margin-right: 0.3rem;
-  margin-bottom: 0.3rem;
+.pill.active{
+  background: linear-gradient(135deg, #0F172A 0%, #334155 100%);
+  border-color: rgba(15,23,42,0.0);
+  color:#FFFFFF;
 }
-.guideSmall { color: #666; margin-top: 0.25rem; line-height: 1.5; }
+.pill.soft{
+  background: rgba(92,107,192,0.10);
+  border-color: rgba(92,107,192,0.22);
+  color:#3F51B5;
+}
+
+/* Sticky guide */
+.sticky-guide{position: sticky; top: .6rem; z-index: 50; margin-bottom: .6rem;}
+
+/* Buttons */
+div.stButton > button{
+  border-radius: 12px !important;
+  font-weight: 800 !important;
+  padding: .55rem .9rem !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -529,18 +401,18 @@ def calculate_flow_state(df: pd.DataFrame, avg_volume: int = 0) -> dict:
     # 価格変動率（絶対値）
     df['price_change'] = abs(df['Close'].pct_change()) * 100
     
-    # 要監視日（取引増加 & 値動き小）を検出
+    # FlowScore日（出来高増加 & 価格安定）を検出
     absorption_days = []
     for i in range(1, len(df)):
         vol_ratio = df['volume_ratio'].iloc[i]
         price_change = df['price_change'].iloc[i]
         
-        # 要監視条件: 出来高1.3倍以上 & 価格変動2%以下
+        # 吸収条件: 出来高1.3倍以上 & 価格変動2%以下
         if vol_ratio >= 1.3 and price_change <= 2.0:
             absorption_days.append(df.index[i])
     
     return {
-        "state": "要監視" if len(absorption_days) >= 2 else "通常",
+        "state": "吸収" if len(absorption_days) >= 2 else "観測中",
         "absorption_days": absorption_days
     }
 
@@ -597,7 +469,7 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         row=1, col=1
     )
     
-    # 要監視日にマーカーを追加（○記号）
+    # FlowScore日にマーカーを追加（○記号）
     for abs_day in absorption_days:
         if abs_day in df.index:
             fig.add_annotation(
@@ -615,9 +487,9 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         vol_ratio = row['Volume'] / avg_vol if avg_vol > 0 else 1
         price_change = abs(row['Close'] / row['Open'] - 1) * 100 if row['Open'] > 0 else 0
         
-        # 要監視（取引増 & 値動き小）
+        # FlowScore（出来高増 & 価格安定）
         if vol_ratio >= 1.5 and price_change <= 1.5:
-            colors.append('#7E57C2')  # 紫（要監視）
+            colors.append('#7E57C2')  # 紫（FlowScore）
         elif vol_ratio >= 1.5:
             colors.append('#FF7043')  # オレンジ（出来高増）
         elif vol_ratio >= 1.2:
@@ -728,13 +600,12 @@ def show_chart_modal(ticker: str, stock_info: dict):
     name = stock_info.get("name", ticker)
     avg_volume = stock_info.get("avg_volume", 0)
     flow_score = stock_info.get("flow_score", 0)
-    level = int(stock_info.get("level", 0) or 0)
-    # state は "要監視" / "拡散" / "沈静" / "観測中" を想定
-    state = stock_info.get("state", "通常")
+    stage = stock_info.get("stage", "監視中")
+    state = stock_info.get("state", "観測中")
     flow_details = stock_info.get("flow_details", {})
     
-    level_color = LEVEL_COLORS.get(level, "#9E9E9E")
-    state_color = STATE_COLORS.get(state, "#9E9E9E")
+    # ステージ色
+    stage_color = STAGE_COLORS.get(stage, "#9E9E9E")
     
     # 戻るボタン
     if st.button("← 一覧に戻る", key="back_btn"):
@@ -771,29 +642,26 @@ def show_chart_modal(ticker: str, stock_info: dict):
                 <div style="background: rgba(255,255,255,0.2); padding: 0.3rem 0.8rem; border-radius: 20px;">
                     FlowScore: <strong>{flow_score}</strong>
                 </div>
-                <div style="background: {level_color}; padding: 0.3rem 0.8rem; border-radius: 20px;">
-                    LEVEL {level}
-                </div>
-                <div style="background: {state_color}; padding: 0.3rem 0.8rem; border-radius: 20px;">
-                    {state}
+                <div style="background: {stage_color}; padding: 0.3rem 0.8rem; border-radius: 20px;">
+                    {stage}
                 </div>
             </div>
             <div style="font-size: 0.8rem; margin-top: 0.3rem; opacity: 0.9;">
-                期間: {period_labels.get(period, '6ヶ月')}
+                状態: {state} | 期間: {period_labels.get(period, '6ヶ月')}
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # FlowScore詳細（折りたたみ）
-    with st.expander("📊 状態スコアの詳細"):
+    with st.expander("📊 FlowScoreの詳細"):
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("出来高異常度", f"{flow_details.get('vol_anomaly', 0)}")
         with col2:
             st.metric("価格安定度", f"{flow_details.get('price_stability', 0)}")
         with col3:
-            st.metric("要監視度", f"{flow_details.get('absorption', 0)}")
+            st.metric("吸収度", f"{flow_details.get('absorption', 0)}")
     
     # チャート表示
     with st.spinner("チャートを読み込み中..."):
@@ -806,7 +674,7 @@ def show_chart_modal(ticker: str, stock_info: dict):
         <strong>📊 チャートの見方</strong><br>
         <span style="color: #26A69A;">■</span> 陽線（上昇）　
         <span style="color: #EF5350;">■</span> 陰線（下落）<br>
-        <span style="color: #7E57C2;">■</span> 出来高：要監視（取引増&値動き小）　
+        <span style="color: #7E57C2;">■</span> 出来高：要監視（取引増&動き小）　
         <span style="color: #FF7043;">■</span> 出来高増　
         <span style="color: #90A4AE;">■</span> 通常<br>
         <span style="color: #7E57C2;">○</span> 要監視日（条件一致）
@@ -1012,60 +880,73 @@ def send_test_email(email: str, app_password: str) -> tuple[bool, str]:
 
 
 def send_spike_alert(email: str, app_password: str, stocks: List[Dict], updated_at: str) -> bool:
+    """手動メール送信（助言ではなく“候補一覧の共有”）。"""
     if not stocks:
         return False
     try:
         msg = MIMEMultipart()
         msg["From"] = email
         msg["To"] = email
-        msg["Subject"] = f"🚀 出来高急動アラート: {len(stocks)}件 - {updated_at[:10]}"
-        
+        msg["Subject"] = f"🦅 ハゲタカSCOPE 候補通知: {len(stocks)}件 - {updated_at[:10]}"
+
         lines = [
             "━" * 30,
-            "📊 出来高急動モニター",
+            "🦅 ハゲタカSCOPE（候補一覧）",
             "━" * 30,
             f"更新日時: {updated_at}",
-            f"検知銘柄: {len(stocks)}件",
+            f"表示件数: {len(stocks)}",
+            "",
+            "※本通知は市場データの可視化に基づく候補一覧です。銘柄推奨・売買助言ではありません。",
+            "━" * 30,
             "",
         ]
-        
-        for s in stocks:
-            marker = "🔴" if s["ratio"] >= RATIO_HIGH else "🟠"
-            name_jp = TICKER_NAMES_JP.get(s["ticker"], s.get("name", "")[:10])
+
+        # LEVEL→FlowScore→名称で整列
+        stocks_sorted = sorted(
+            stocks,
+            key=lambda s: (int(s.get("level", 0)), float(s.get("flow_score", 0))),
+            reverse=True
+        )
+
+        for s in stocks_sorted[:30]:
+            ticker = s.get("ticker", "")
+            name_jp = TICKER_NAMES_JP.get(ticker, s.get("name", "")[:12])
+            level = int(s.get("level", 0))
+            flow = s.get("flow_score", 0)
+            state = s.get("display_state", s.get("state", ""))
+            tags = s.get("tags", [])
+            tag_txt = " / ".join(tags[:4]) if tags else "-"
             lines.extend([
-                f"{marker} {s['ticker']} ({name_jp})",
-                f"   倍率: {s['ratio']}x | ¥{s.get('price', 0):,.0f} | {s.get('market_cap_oku', 0)}億円",
+                f"LEVEL {level}  {ticker}（{name_jp}）",
+                f"  FlowScore: {flow} / 状態: {state}",
+                f"  タグ: {tag_txt}",
                 "",
             ])
-        
-        lines.append("━" * 30)
-        lines.append("源太AI ハゲタカSCOPE")
-        lines.append("━" * 30)
+
         msg.attach(MIMEText("\n".join(lines), "plain", "utf-8"))
-        
+
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(email, app_password)
             server.send_message(msg)
         return True
-    except:
+    except Exception:
         return False
+
 
 
 # ==========================================
 # カード表示
 # ==========================================
 def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
-    """銘柄カードを表示（FlowScore対応）"""
+    """銘柄カードを表示（LEVEL + FlowScore + 状態タグ）"""
     flow_score = d.get("flow_score", 0)
-    stage = d.get("stage", "監視中")  # 旧データ互換
-    state = d.get("state", "通常")
-    # level は新データ。旧データの場合は stage から推定。
-    stage_to_level = {"発表待ち": 4, "匂い": 3, "加速": 2, "仕込み": 1, "監視中": 0}
-    level = int(d.get("level", stage_to_level.get(stage, 0)) or 0)
+    level = int(d.get("level", 0))
+    ma_score = d.get("ma_score", None)
+    state = d.get("display_state", d.get("state", "観測中"))
     tags = d.get("tags", [])
-    
-    # FlowScoreに基づくカードクラス
+
+    # FlowScoreに基づくカードクラス（見た目の強弱）
     if flow_score >= FLOW_SCORE_HIGH:
         card_class = "high"
         score_class = "high"
@@ -1075,21 +956,28 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
     else:
         card_class = ""
         score_class = "normal"
-    
+
     level_color = LEVEL_COLORS.get(level, "#9E9E9E")
-    state_color = STATE_COLORS.get(state, "#9E9E9E")
-    
+
     code = ticker.replace(".T", "")
     url = f"https://finance.yahoo.co.jp/quote/{code}.T"
-    
+
     # 日本語名
     name_jp = TICKER_NAMES_JP.get(ticker, d.get('name', code))
-    
-    # タグ表示（最大3つ）
+
+    # タグ表示（最大4つ）
     tags_html = ""
-    for tag in tags[:3]:
-        tags_html += f'<span style="background:#E8EAF6;color:#5C6BC0;padding:2px 6px;border-radius:4px;font-size:0.65rem;margin-right:4px;">{tag}</span>'
-    
+    for tag in tags[:4]:
+        # 要監視は目立たせる（グレー禁止）
+        if tag == "要監視":
+            tags_html += '<span style="background:#E8EAF6;color:#5C6BC0;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">要監視</span>'
+        else:
+            tags_html += f'<span style="background:#F3F4F6;color:#444;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;">{tag}</span>'
+
+    # 表示用スコア（主はFlow。補助でLEVEL）
+    score_text = f"{flow_score}"
+    level_text = f"LEVEL {level}" if level > 0 else "LEVEL -"
+
     st.markdown(f"""
     <div class="spike-card {card_class}">
         <div class="card-header">
@@ -1098,28 +986,54 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
                 <span style="font-size:0.75rem;color:#888;margin-left:6px;">{str(name_jp)[:12]}</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
-                <span style="background:{level_color};color:white;padding:3px 10px;border-radius:12px;font-size:0.75rem;font-weight:800;">LEVEL {level}</span>
-                <div class="ratio-badge {score_class}">{flow_score}</div>
+                <span style="background:{level_color};color:white;padding:3px 10px;border-radius:12px;font-size:0.75rem;font-weight:700;">{level_text}</span>
+                <div class="ratio-badge {score_class}">{score_text}</div>
             </div>
         </div>
         <div class="card-body">
-            <div><span class="info-label">現在値</span><br><span class="info-value" style="color:#C41E3A;font-weight:600;">¥{d['price']:,.0f}</span></div>
-            <div><span class="info-label">状態</span><br>
-                 <span style="background:{state_color};color:white;padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:800;">{state}</span>
-            </div>
-            <div><span class="info-label">時価総額</span><br><span class="info-value">{d['market_cap_oku']:,}億円</span></div>
+            <div><span class="info-label">現在値</span><br><span class="info-value" style="color:#C41E3A;font-weight:600;">¥{d.get('price',0):,.0f}</span></div>
+            <div><span class="info-label">状態</span><br><span class="info-value">{state}</span></div>
+            <div><span class="info-label">時価総額</span><br><span class="info-value">{d.get('market_cap_oku',0):,}億円</span></div>
             <div><span class="info-label">出来高倍率</span><br><span class="info-value">{d.get('vol_ratio', 0)}x</span></div>
         </div>
         <div style="padding:0 0.8rem 0.5rem;font-size:0.7rem;">{tags_html}</div>
     </div>
     """, unsafe_allow_html=True)
-    
-    # チャート表示ボタン
-    if st.button(f"📊 チャートを見る", key=f"chart_{ticker}", use_container_width=True):
-        st.session_state["show_chart"] = True
-        st.session_state["selected_ticker"] = ticker
-        st.session_state["selected_stock_info"] = d
-        st.rerun()
+
+    # チャートは画面遷移せず、その場で表示切替
+    chart_open = st.session_state.setdefault("chart_open", {})
+    is_open = bool(chart_open.get(ticker, False))
+
+    toggle_label = "📊 チャートを閉じる" if is_open else "📊 チャートを表示"
+    if st.button(toggle_label, key=f"chart_toggle_{ticker}", use_container_width=True):
+        chart_open[ticker] = not is_open
+        st.session_state["chart_open"] = chart_open
+
+    if chart_open.get(ticker, False):
+        # 期間選択（見た目はピル、実体はボタン）
+        period_key = f"period_{ticker}"
+        current_period = st.session_state.get(period_key, "6mo")
+        periods = [("1ヶ月", "1mo"), ("3ヶ月", "3mo"), ("6ヶ月", "6mo"), ("1年", "1y")]
+
+        st.markdown('<div class="pill-row">', unsafe_allow_html=True)
+        cols = st.columns(len(periods))
+        for i, (lab, val) in enumerate(periods):
+            with cols[i]:
+                btn_type = "primary" if current_period == val else "secondary"
+                if st.button(lab, key=f"{period_key}_{val}", use_container_width=True, type=btn_type):
+                    st.session_state[period_key] = val
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        period = st.session_state.get(period_key, "6mo")
+
+        with st.spinner("チャートを読み込み中..."):
+            name = d.get("name", ticker)
+            avg_volume = d.get("avg_volume", 0)
+            flow_details = d.get("flow_details", {})
+            fig = create_chart(ticker, name, period, avg_volume, flow_details)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+        st.caption("※表示は市場データの可視化です。銘柄推奨・売買助言ではありません。")
 
 
 # ==========================================
@@ -1295,72 +1209,85 @@ def show_main_page():
             </div>
             """, unsafe_allow_html=True)
             
-            # 画面を邪魔しないガイド（スクロールしても上部に残る）
-            st.markdown(f"""
-            <div id="stickyGuide">
-              <details>
-                <summary>❓ LEVELガイド</summary>
-                <div class="guideBody">
-                  <div class="guideNote">{DISCLAIMER_TEXT}</div>
-                  <div class="guideGrid">
-                    <div><span class="lv" style="background:{LEVEL_COLORS[4]};">LEVEL 4</span><div class="lvText">条件一致が多く、状況の密度が高い</div><div class="lvDo">見ること：レベル推移／ニュース・開示／値幅の急変</div></div>
-                    <div><span class="lv" style="background:{LEVEL_COLORS[3]};">LEVEL 3</span><div class="lvText">複数条件が重なっている</div><div class="lvDo">見ること：一致した条件の内訳／ニュース・開示</div></div>
-                    <div><span class="lv" style="background:{LEVEL_COLORS[2]};">LEVEL 2</span><div class="lvText">変化が見え始めた</div><div class="lvDo">見ること：直近7〜14日の推移／状態タグ</div></div>
-                    <div><span class="lv" style="background:{LEVEL_COLORS[1]};">LEVEL 1</span><div class="lvText">条件に触れた</div><div class="lvDo">見ること：ウォッチ登録／週1確認</div></div>
-                  </div>
-                  <div class="guideLegend">
-                    <span class="tag" style="background:{STATE_COLORS['要監視']};">要監視</span>
-                    <span class="tag" style="background:{STATE_COLORS['拡散']};">拡散</span>
-                    <span class="tag" style="background:{STATE_COLORS['沈静']};">沈静</span>
-                    <span class="tag" style="background:{STATE_COLORS['通常']};">通常</span>
-                    <div class="guideSmall">※タグは売買指示ではなく、状態の可視化（条件一致）です。</div>
-                  </div>
-                </div>
-              </details>
+            
+            # LEVELガイド（邪魔しない表示）
+            def st.markdown('<div class="sticky-guide">', unsafe_allow_html=True)
+            _render_level_guide()
+            st.markdown('</div>', unsafe_allow_html=True):
+                guide_md = """
+**LEVELは“条件一致の多さ”を示す目安（0〜4）です。**
+
+- **LEVEL 1**：条件に触れた（変化は小さい）
+- **LEVEL 2**：変化が見え始めた
+- **LEVEL 3**：複数条件が重なっている
+- **LEVEL 4**：条件一致が多く密度が高い
+
+※本ツールは市場データの可視化です。銘柄推奨・売買助言ではありません。
+"""
+                try:
+                    with st.popover("❓LEVEL", use_container_width=False):
+                        st.markdown(guide_md)
+                except Exception:
+                    with st.expander("❓LEVELガイド", expanded=False):
+                        st.markdown(guide_md)
+
+            st.markdown('<div class="sticky-guide">', unsafe_allow_html=True)
+            _render_level_guide()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # 説明（中立表現）
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                        border-radius: 10px; padding: 0.8rem; margin-bottom: 1rem; color: white; font-size: 0.8rem;">
+                <strong>🎯 候補抽出の考え方</strong><br>
+                「取引量が増えているのに値動きが小さい」などの条件一致を組み合わせ、候補を少数に絞って表示します。
             </div>
             """, unsafe_allow_html=True)
-            
+
             # フィルター切替
-            show_all = st.checkbox("全銘柄を表示", value=False)
-            
+            show_all = st.checkbox("全銘柄を表示（参考）", value=False)
+
             if show_all:
                 display_data = data.get("all_data", {})
             else:
                 display_data = data.get("data", {})
-            
-            # 統計
-            high_flow = len([v for v in display_data.values() if v.get("flow_score", 0) >= FLOW_SCORE_HIGH])
-            medium_flow = len([v for v in display_data.values() if v.get("flow_score", 0) >= FLOW_SCORE_MEDIUM])
-            
+
+            # 統計（LEVEL別）
+            lvl4 = len([v for v in display_data.values() if int(v.get("level", 0)) == 4])
+            lvl3p = len([v for v in display_data.values() if int(v.get("level", 0)) >= 3])
+            flow70 = len([v for v in display_data.values() if v.get("flow_score", 0) >= FLOW_SCORE_HIGH])
+
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.markdown(f'<div class="stat-box"><div class="stat-value high">{high_flow}</div><div class="stat-label">FlowScore 70+</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="stat-box"><div class="stat-value high">{lvl4}</div><div class="stat-label">LEVEL 4</div></div>', unsafe_allow_html=True)
             with col2:
-                st.markdown(f'<div class="stat-box"><div class="stat-value medium">{medium_flow}</div><div class="stat-label">FlowScore 40+</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="stat-box"><div class="stat-value medium">{lvl3p}</div><div class="stat-label">LEVEL 3+</div></div>', unsafe_allow_html=True)
             with col3:
-                st.markdown(f'<div class="stat-box"><div class="stat-value total">{len(display_data)}</div><div class="stat-label">候補数</div></div>', unsafe_allow_html=True)
-            
+                st.markdown(f'<div class="stat-box"><div class="stat-value total">{len(display_data)}</div><div class="stat-label">表示件数</div></div>', unsafe_allow_html=True)
+
             st.markdown("")
-            
-            # LEVELフィルター（数字のみ）
-            level_options = ["すべて", "4", "3", "2", "1"]
-            filter_level = st.radio("LEVEL", level_options, horizontal=True, label_visibility="collapsed")
+
+            # LEVELフィルター（数字のみ / 見た目はプロっぽくボタン）
+            level_options = [("ALL", "すべて"), ("4", "4"), ("3", "3"), ("2", "2"), ("1", "1")]
+            selected_level = st.session_state.get("filter_level", "すべて")
+
+            cols = st.columns(len(level_options))
+            for i, (label, value) in enumerate(level_options):
+                with cols[i]:
+                    btn_type = "primary" if selected_level == value else "secondary"
+                    if st.button(label, key=f"level_btn_{value}", use_container_width=True, type=btn_type):
+                        st.session_state["filter_level"] = value
+                        selected_level = value
+
+            filter_level = selected_level
+
             if filter_level != "すべて":
-                target = int(filter_level)
-                # 旧データ互換：stageから推定
-                stage_to_level = {"発表待ち": 4, "匂い": 3, "加速": 2, "仕込み": 1}
-                def _get_level(v):
-                    if "level" in v and v.get("level") is not None:
-                        try:
-                            return int(v.get("level") or 0)
-                        except:
-                            return 0
-                    return stage_to_level.get(v.get("stage", ""), 0)
-                display_data = {k: v for k, v in display_data.items() if _get_level(v) == target}
+                lv = int(filter_level)
+                display_data = {k: v for k, v in display_data.items() if int(v.get("level", 0)) == lv}
             
             # カード表示
             if display_data:
-                for ticker, d in display_data.items():
+                for ticker, d in sorted(display_data.items(), key=lambda x: (int(x[1].get('level',0)), float(x[1].get('ma_score',0)), float(x[1].get('flow_score',0))), reverse=True):
                     render_card(ticker, d)
             else:
                 st.info("該当する銘柄がありません")
