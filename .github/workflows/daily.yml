@@ -1,8 +1,8 @@
-name: Daily Update
+name: Daily Update (TEST - No Email)
 
 on:
   schedule:
-    # 必要なら残す（テストで不要ならこの schedule 自体を削除してOK）
+    # 毎日 07:30 UTC = 16:30 JST（平日のみ）
     - cron: '30 7 * * 1-5'
   workflow_dispatch: {}
 
@@ -32,16 +32,9 @@ jobs:
       - name: Fetch volume data
         run: python fetch_data.py
 
-      # ✅ 重要：手動実行では絶対送らない
-      # （schedule の時だけ、かつ NOTIFY_ENABLED=true の時だけ送る）
-      - name: Send notifications
-        if: github.event_name == 'schedule' && secrets.NOTIFY_ENABLED == 'true'
-        env:
-          GSHEETS_CREDENTIALS: ${{ secrets.GSHEETS_CREDENTIALS }}
-          SPREADSHEET_URL: ${{ secrets.SPREADSHEET_URL }}
-          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
-          NOTIFY_ENABLED: ${{ secrets.NOTIFY_ENABLED }}
-        run: python send_notifications.py
+      # ✅ テスト環境では通知は一切しない（手動も自動も）
+      - name: Notifications disabled in TEST
+        run: echo "TEST environment: email notifications are disabled."
 
       - name: Commit and push changes
         run: |
@@ -52,5 +45,5 @@ jobs:
             echo "No changes to commit."
             exit 0
           fi
-          git commit -m "📊 Update volume data $(date +'%Y-%m-%d %H:%M')"
+          git commit -m "📊 Update volume data (TEST) $(date +'%Y-%m-%d %H:%M')"
           git push
