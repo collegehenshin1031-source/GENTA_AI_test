@@ -6,6 +6,11 @@ on:
     - cron: '30 7 * * 1-5'
   workflow_dispatch:  # 手動実行用
 
+# data/ratios.json をコミットして push するために必要。
+# Actions の既定権限が read-only のリポジトリでは git push が 403 で失敗するので明示。
+permissions:
+  contents: write
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -13,6 +18,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -21,7 +28,9 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install yfinance pandas pytz gspread google-auth cryptography
+          python -m pip install --upgrade pip
+          # 依存関係の漏れ/バージョン差によるエラーを避けるため requirements.txt に統一
+          pip install -r requirements.txt
       
       - name: Fetch volume data
         run: python fetch_data.py
@@ -38,5 +47,10 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add data/ratios.json
-          git diff --quiet && git diff --staged --quiet || git commit -m "📊 Update volume data $(date +'%Y-%m-%d %H:%M')"
+          # 変更がある場合のみコミット & push
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "📊 Update volume data $(date +'%Y-%m-%d %H:%M')"
           git push
