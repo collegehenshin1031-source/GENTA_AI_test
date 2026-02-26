@@ -23,8 +23,7 @@ from cryptography.fernet import Fernet
 # 定数
 # ==========================================
 JST = pytz.timezone("Asia/Tokyo")
-RATIO_HIGH = 3.0
-RATIO_MEDIUM = 1.5
+FLOW_NOTIFY_THRESHOLD = 40  # FlowScoreがこの値以上の銘柄を通知対象
 
 # 日本語銘柄名辞書
 TICKER_NAMES_JP = {
@@ -188,65 +187,43 @@ def create_email_body(data: dict) -> tuple[str, str]:
     updated_at = data.get("updated_at", "不明")
     stocks_data = data.get("data", {})
     
-    # 1.5倍以上の銘柄を抽出
-    spike_stocks = {k: v for k, v in stocks_data.items() if v.get("ratio", 0) >= RATIO_MEDIUM}
-    
-    if not spike_stocks:
+    # FlowScoreが一定以上の銘柄を抽出（ハゲタカSCOPEの候補通知）
+    notify_stocks = {k: v for k, v in stocks_data.items() if float(v.get("flow_score", 0) or 0) >= FLOW_NOTIFY_THRESHOLD}
+    if not notify_stocks:
         return None, None  # 通知する銘柄がない
     
-    # 件名
-    high_count = len([v for v in spike_stocks.values() if v["ratio"] >= RATIO_HIGH])
-    subject = f"🚀 出来高急動アラート: {len(spike_stocks)}件"
-    if high_count > 0:
-        subject += f"（🔴3倍以上: {high_count}件）"
-    subject += f" - {updated_at[:10]}"
+    # 件名（数字と日付だけで分かるように）
+    subject = f"🦅 ハゲタカSCOPE 要監視候補: {len(notify_stocks)}件 - {updated_at[:10]}"
     
     # 本文作成
     lines = [
-        "━" * 35,
-        "📊 源太AI ハゲタカSCOPE",
-        "━" * 35,
+        "━" * 40,
+        "🦅 源太AI ハゲタカSCOPE（自動通知）",
+        "━" * 40,
         f"更新日時: {updated_at}",
-        f"検知銘柄: {len(spike_stocks)}件",
+        f"要監視候補（FlowScore {FLOW_NOTIFY_THRESHOLD}+）: {len(notify_stocks)}件",
         "",
-        "━" * 35,
+        "※本通知は市場データの可視化（条件一致）です。銘柄推奨・売買助言ではありません。",
+        "━" * 40,
     ]
     
-    # 3倍以上の銘柄（優先表示）
-    high_stocks = {k: v for k, v in spike_stocks.items() if v["ratio"] >= RATIO_HIGH}
-    if high_stocks:
-        lines.append("🔴 3倍以上（要注目！）")
-        lines.append("━" * 35)
-        for ticker, d in sorted(high_stocks.items(), key=lambda x: x[1]["ratio"], reverse=True):
-            name_jp = TICKER_NAMES_JP.get(ticker, d.get("name", "")[:10])
-            lines.extend([
-                f"🔴 {ticker} ({name_jp})",
-                f"   倍率: {d['ratio']}x",
-                f"   現在値: ¥{d.get('price', 0):,.0f}",
-                f"   時価総額: {d.get('market_cap_oku', 0)}億円",
-                "",
-            ])
-    
-    # 1.5倍〜3倍の銘柄
-    medium_stocks = {k: v for k, v in spike_stocks.items() if RATIO_MEDIUM <= v["ratio"] < RATIO_HIGH}
-    if medium_stocks:
-        lines.append("🟠 1.5倍以上")
-        lines.append("━" * 35)
-        for ticker, d in sorted(medium_stocks.items(), key=lambda x: x[1]["ratio"], reverse=True):
-            name_jp = TICKER_NAMES_JP.get(ticker, d.get("name", "")[:10])
-            lines.extend([
-                f"🟠 {ticker} ({name_jp})",
-                f"   倍率: {d['ratio']}x",
-                f"   現在値: ¥{d.get('price', 0):,.0f}",
-                f"   時価総額: {d.get('market_cap_oku', 0)}億円",
-                "",
-            ])
+    # FlowScoreの高い順で上位を並べる
+    for ticker, d in sorted(notify_stocks.items(), key=lambda x: float(x[1].get("flow_score", 0) or 0), reverse=True):
+        name_jp = TICKER_NAMES_JP.get(ticker, d.get("name", "")[:12])
+        level = d.get("level", 0)
+        state = d.get("state", "通常")
+        lines.extend([
+            f"・{ticker} ({name_jp})",
+            f"   LEVEL: {level} | 状態: {state} | FlowScore: {d.get('flow_score', 0)}",
+            f"   現在値: ¥{d.get('price', 0):,.0f} | 時価総額: {d.get('market_cap_oku', 0)}億円",
+            "",
+        ])
     
     lines.extend([
-        "━" * 35,
+        "━" * 40,
         "📱 詳細はアプリで確認",
-        "https://gentaai-hagetaka-scope.streamlit.app/",
-        "━" * 35,
+        "https://hagetaka-scope-test.streamlit.app/",
+        "━" * 40,
         "",
         "※ このメールは自動送信されています",
         "※ 配信停止はアプリの通知設定から行えます",
