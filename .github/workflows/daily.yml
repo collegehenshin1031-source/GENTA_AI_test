@@ -2,52 +2,52 @@ name: Daily Update
 
 on:
   schedule:
-    # 毎日 07:30 UTC = 16:30 JST（平日のみ）
+    # 必要なら残す（テストで不要ならこの schedule 自体を削除してOK）
     - cron: '30 7 * * 1-5'
-  workflow_dispatch:  # 手動実行用
+  workflow_dispatch: {}
 
-# data/ratios.json をコミットして push するために必要。
-# Actions の既定権限が read-only のリポジトリでは git push が 403 で失敗するので明示。
 permissions:
   contents: write
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # 依存関係の漏れ/バージョン差によるエラーを避けるため requirements.txt に統一
           pip install -r requirements.txt
-      
+
       - name: Fetch volume data
         run: python fetch_data.py
-      
+
+      # ✅ 重要：手動実行では絶対送らない
+      # （schedule の時だけ、かつ NOTIFY_ENABLED=true の時だけ送る）
       - name: Send notifications
+        if: github.event_name == 'schedule' && secrets.NOTIFY_ENABLED == 'true'
         env:
           GSHEETS_CREDENTIALS: ${{ secrets.GSHEETS_CREDENTIALS }}
           SPREADSHEET_URL: ${{ secrets.SPREADSHEET_URL }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          NOTIFY_ENABLED: ${{ secrets.NOTIFY_ENABLED }}
         run: python send_notifications.py
-      
+
       - name: Commit and push changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add data/ratios.json
-          # 変更がある場合のみコミット & push
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
