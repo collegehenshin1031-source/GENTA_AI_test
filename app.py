@@ -10,6 +10,7 @@ HAGETAKA SCOPE - M&A候補検知ツール
 """
 
 import json
+import re
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -21,6 +22,73 @@ import pytz
 import base64
 import pandas as pd
 import numpy as np
+
+
+# ==========================================
+# 表示ラベル正規化（タグ/状態の表記揺れ吸収）
+# ==========================================
+def _norm_label(s) -> str:
+    """先頭記号や余計な空白を除去してラベルを正規化する。"""
+    if s is None:
+        return ""
+    t = str(s).strip()
+    # 先頭の装飾記号を除去（例：○要監視、✅要監視 など）
+    t = re.sub(r'^[\s○●◎◯・\-–—★☆▶▷→⇒✓✔✅☑︎【\[\(（]+', '', t).strip()
+    return t
+
+def _norm_tag(t) -> str:
+    """旧表記も含め、UIで扱うタグ名に正規化する。"""
+    t = _norm_label(t)
+    if not t:
+        return ""
+    # 価値判断に見える旧タグが混ざってもUI側ではゾーンに統一
+    if "下側" in t or "割安" in t:
+        return "下側ゾーン"
+    if "上側" in t or "割高" in t:
+        return "上側ゾーン"
+    if "要監視" in t:
+        return "要監視"
+    return t
+
+def _normalized_tags(tags) -> List[str]:
+    """タグ配列を正規化して重複を除去（順序保持）。"""
+    if not tags:
+        return []
+    if not isinstance(tags, list):
+        tags = [tags]
+    out = []
+    seen = set()
+    for x in tags:
+        nt = _norm_tag(x)
+        if nt and nt not in seen:
+            out.append(nt)
+            seen.add(nt)
+    return out
+
+def _is_watch(item: dict) -> bool:
+    """要監視判定（display_state/tagsの表記揺れを吸収）。"""
+    state = _norm_label(item.get("display_state", item.get("state", "")))
+    if "要監視" in state:
+        return True
+    for tg in _normalized_tags(item.get("tags") or []):
+        if tg == "要監視":
+            return True
+    return False
+
+def _zone_tag_from_fields(item: dict) -> Optional[str]:
+    """support_gap_pctがある場合は値からゾーンタグを再計算（タグ欠損への保険）。"""
+    try:
+        gap = item.get("support_gap_pct", None)
+        if gap is None:
+            return None
+        gap = float(gap)
+        if gap <= 5.0:
+            return "下側ゾーン"
+        if gap >= 20.0:
+            return "上側ゾーン"
+    except Exception:
+        return None
+    return None
 
 # チャート
 import plotly.graph_objects as go
@@ -1201,8 +1269,8 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
     flow_score = d.get("flow_score", 0)
     level = int(d.get("level", 0))
     ma_score = d.get("ma_score", None)
-    state = d.get("display_state", d.get("state", "観測中"))
-    tags = d.get("tags", [])
+    state = _norm_label(d.get("display_state", d.get("state", "観測中")))
+    tags = _normalized_tags(d.get("tags", []))
 
     # FlowScoreに基づくカードクラス（見た目の強弱）
     if flow_score >= FLOW_SCORE_HIGH:
@@ -1547,9 +1615,7 @@ def show_main_page():
             if "flt_query" not in st.session_state:
                 st.session_state["flt_query"] = ""
 
-            def _is_watch(item: dict) -> bool:
-                tags = item.get("tags") or []
-                return (item.get("display_state") == "要監視") or ("要監視" in tags)
+            # ※要監視判定は上部の _is_watch() を使用（表記揺れ吸収）
 
             def _apply_filters(items: dict) -> dict:
                 q = (st.session_state.get("flt_query") or "").strip().lower()
@@ -1567,9 +1633,14 @@ def show_main_page():
                         except Exception:
                             continue
 
-                    # ゾーン（タグ）
+                    # ゾーン（タグ）※表記揺れ吸収 + support_gap_pct からの再計算も考慮
                     if zones:
-                        tags = set(it.get("tags") or [])
+                        tags_list = _normalized_tags(it.get("tags") or [])
+                        # tagsに無いが数値だけあるケースの救済
+                        z_from_val = _zone_tag_from_fields(it)
+                        if z_from_val and z_from_val not in tags_list:
+                            tags_list.append(z_from_val)
+                        tags = set(tags_list)
                         if not any(z in tags for z in zones):
                             continue
 
