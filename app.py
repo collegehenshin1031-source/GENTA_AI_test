@@ -398,90 +398,6 @@ def calculate_volume_profile(df: pd.DataFrame, bins: int = 20) -> pd.DataFrame:
     return pd.DataFrame(volume_profile)
 
 
-def calculate_volume_profile_with_bins(df: pd.DataFrame, price_bins: np.ndarray) -> pd.DataFrame:
-    """同じprice_binsを使って価格帯別売買高を計算（差分用）"""
-    if df.empty or price_bins is None or len(price_bins) < 2:
-        return pd.DataFrame()
-    volume_profile = []
-    for i in range(len(price_bins) - 1):
-        bin_low = float(price_bins[i])
-        bin_high = float(price_bins[i + 1])
-        bin_center = (bin_low + bin_high) / 2.0
-
-        total_volume = 0.0
-        for _, row in df.iterrows():
-            low = float(row["Low"])
-            high = float(row["High"])
-            vol = float(row["Volume"])
-            if low <= bin_high and high >= bin_low:
-                overlap_low = max(low, bin_low)
-                overlap_high = min(high, bin_high)
-                if high > low:
-                    ratio = (overlap_high - overlap_low) / (high - low)
-                else:
-                    ratio = 1.0
-                total_volume += vol * ratio
-
-        volume_profile.append({"price": bin_center, "price_low": bin_low, "price_high": bin_high, "volume": total_volume})
-    return pd.DataFrame(volume_profile)
-
-
-def compute_support_from_recent_growth(
-    df: pd.DataFrame,
-    bins: int,
-    recent_ratio: float = 0.33,
-    low_band_ratio: float = 0.35,
-):
-    """下値ラインを「直近で価格帯別売買高が伸びた帯 × 安値付近」から選ぶ。
-
-    返り値: (support_price, support_upper_price, highlight_range_dict)
-      - support_price: 選んだ帯の下限
-      - support_upper_price: 選んだ帯の上限
-      - highlight_range_dict: {'price_low':..., 'price_high':...}（VP強調用）
-    """
-    if df is None or df.empty or len(df) < 40:
-        return None, None, None
-
-    price_min = float(df["Low"].min())
-    price_max = float(df["High"].max())
-    if not np.isfinite(price_min) or not np.isfinite(price_max) or price_max <= price_min:
-        return None, None, None
-
-    price_bins = np.linspace(price_min, price_max, int(bins) + 1)
-
-    n = len(df)
-    recent_len = max(20, int(n * float(recent_ratio)))
-    if n < recent_len * 2:
-        return None, None, None
-
-    recent_df = df.tail(recent_len)
-    prev_df = df.iloc[-recent_len * 2 : -recent_len]
-
-    vp_recent = calculate_volume_profile_with_bins(recent_df, price_bins)
-    vp_prev = calculate_volume_profile_with_bins(prev_df, price_bins)
-    if vp_recent.empty or vp_prev.empty:
-        return None, None, None
-
-    vp = vp_recent.copy()
-    vp["prev_volume"] = vp_prev["volume"].values
-    vp["growth"] = vp["volume"] - vp["prev_volume"]
-
-    # 安値付近（下側）だけに絞る
-    low_limit = price_min + (price_max - price_min) * float(low_band_ratio)
-    cand = vp[vp["price_high"] <= low_limit].copy()
-    if cand.empty:
-        return None, None, None
-
-    cand = cand.sort_values("growth", ascending=False)
-    best = cand.iloc[0]
-    if float(best.get("growth", 0.0)) <= 0:
-        return None, None, None
-
-    support_price = float(best["price_low"])
-    support_upper = float(best["price_high"])
-    return support_price, support_upper, {"price_low": support_price, "price_high": support_upper}
-
-
 def compute_support_zone_from_profile(vp: pd.DataFrame, threshold_ratio: float = 0.60):
     """高出来高ゾーン（POC周辺）を抽出し、下限を支持線として返す。
 
@@ -568,253 +484,212 @@ def calculate_flow_state(df: pd.DataFrame, avg_volume: int = 0) -> dict:
     }
 
 
-def create_chart(
-    ticker: str,
-    name: str,
-    period: str = "6mo",
-    avg_volume: int = 0,
-    flow_data: dict = None,
-    show_details: bool = False,
-    show_reason: bool = False,
-) -> go.Figure:
+def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 0, flow_data: dict = None) -> go.Figure:
     """
-    ローソク足＋（任意で）出来高＋右側VP（価格帯別売買高）を表示します。
-    初心者向けに、デフォルトは“シンプル表示”（出来高を隠す）です。
-
-    - 下値帯：support_price〜support_upper（青い帯）
-    - 根拠VPバー：show_reason=True のときのみ青強調
+    ローソク足チャート・出来高・価格帯別売買高を作成
+    TradingView風の明るいデザイン（抵抗線・支持線なし）
     """
     df = fetch_chart_data(ticker, period)
-    if df is None or df.empty:
+    
+    if df.empty:
         fig = go.Figure()
-        fig.add_annotation(text="データを取得できませんでした", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(text="データを取得できませんでした", 
+                          xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
         return fig
-
-    # Flow状態（要監視ポイント）
+    
+    # Flow状態を計算
     flow_state = calculate_flow_state(df, avg_volume)
     absorption_days = flow_state.get("absorption_days", [])
+    
+    # 出来高の色分け用データ
+    avg_vol = df['Volume'].tail(60).mean() if len(df) >= 60 else df['Volume'].mean()
+    
+    # 価格帯別売買高を計算（期間ごと）
+    volume_profile = calculate_volume_profile(df)
+    # 下値ライン（期間内で最大出来高帯=POCの下限）
+    support_price = compute_poc_support_from_profile(volume_profile)
+    support_upper = None
 
-    # VP（期間ごと）
-    bins_map = {"1mo": 30, "3mo": 40, "6mo": 50, "1y": 60}
-    bins = bins_map.get(period, 40)
-    volume_profile = calculate_volume_profile(df, bins=bins)
-
-    # 下値帯（直近伸び×安値付近 → フォールバックでPOC周辺帯）
-    support_price, support_upper, highlight_range = compute_support_from_recent_growth(
-        df,
-        bins=bins,
-        recent_ratio=0.33,
-        low_band_ratio=0.35,
+    
+    # サブプロット作成
+    fig = make_subplots(
+        rows=2, cols=2,
+        column_widths=[0.88, 0.12],
+        row_heights=[0.65, 0.35],
+        specs=[[{"rowspan": 1}, {"rowspan": 2}],
+               [{"rowspan": 1}, None]],
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        horizontal_spacing=0.02
     )
-    if support_price is None or support_upper is None:
-        support_price, support_upper = compute_support_zone_from_profile(volume_profile, threshold_ratio=0.60)
-        highlight_range = None
-
-    # ===== サブプロット作成 =====
-    # show_details=True のときだけ下段（出来高）を出す
-    if show_details:
-        fig = make_subplots(
-            rows=2,
-            cols=2,
-            column_widths=[0.88, 0.12],
-            row_heights=[0.65, 0.35],
-            specs=[[{"rowspan": 1}, {"rowspan": 1}], [{"rowspan": 1}, None]],
-            shared_xaxes=True,
-            vertical_spacing=0.05,
-            horizontal_spacing=0.02,
-        )
-    else:
-        fig = make_subplots(
-            rows=1,
-            cols=2,
-            column_widths=[0.88, 0.12],
-            specs=[[{"rowspan": 1}, {"rowspan": 1}]],
-            shared_xaxes=True,
-            vertical_spacing=0.02,
-            horizontal_spacing=0.02,
-        )
-
-    # ===== ローソク足 =====
+    
+    # ===== ローソク足チャート =====
     fig.add_trace(
         go.Candlestick(
             x=df.index,
-            open=df["Open"],
-            high=df["High"],
-            low=df["Low"],
-            close=df["Close"],
-            increasing_line_color="#26A69A",
-            decreasing_line_color="#EF5350",
-            increasing_fillcolor="#26A69A",
-            decreasing_fillcolor="#EF5350",
-            name="価格",
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            increasing_line_color='#26A69A',
+            decreasing_line_color='#EF5350',
+            increasing_fillcolor='#26A69A',
+            decreasing_fillcolor='#EF5350',
+            name='価格'
         ),
-        row=1,
-        col=1,
+        row=1, col=1
     )
-
-    # ===== 下値帯（帯＋中心線）=====
-    if support_price is not None and support_upper is not None:
+    # 下値ラインを描画（見える化：売買指示ではなく位置の目安）
+    if support_price is not None:
         try:
-            y0 = float(min(support_price, support_upper))
-            y1 = float(max(support_price, support_upper))
-            mid = (y0 + y1) / 2.0
-
-            fig.add_hrect(
-                y0=y0,
-                y1=y1,
-                fillcolor="rgba(30, 136, 229, 0.14)",
-                line_width=0,
-                row=1,
-                col=1,
-            )
-            fig.add_hline(y=mid, line_dash="dot", line_width=1, line_color="#1E88E5", row=1, col=1)
-
-            period_label = {"1mo": "1ヶ月", "3mo": "3ヶ月", "6mo": "6ヶ月", "1y": "1年"}.get(period, period)
+            fig.add_hline(y=support_price, line_dash='dot', line_width=1, line_color='#1E88E5', row=1, col=1)
+            period_label = {"1mo":"1ヶ月","3mo":"3ヶ月","6mo":"6ヶ月","1y":"1年"}.get(period, period)
             fig.add_annotation(
                 x=df.index[-1],
-                y=y1,
-                text=f"下値帯（{period_label}）",
+                y=support_price,
+                text=f'下値ライン（{period_label}） {support_price:,.0f}',
                 showarrow=False,
-                xanchor="right",
-                yanchor="bottom",
-                font=dict(size=10, color="#1E88E5"),
+                xanchor='right',
+                yanchor='bottom',
+                font=dict(size=10, color='#1E88E5'),
                 row=1,
-                col=1,
+                col=1
             )
         except Exception:
             pass
-
-    # ===== 要監視ポイント（紫丸）=====
+    
+    # 「要監視ポイント」マーカー（出来高増 × 値動き小の条件一致日）
+    # ※売買の合図ではなく、状態変化の“記録”として表示
     if absorption_days:
         xs, ys = [], []
         for abs_day in absorption_days:
             if abs_day in df.index:
                 xs.append(abs_day)
-                ys.append(float(df.loc[abs_day, "High"]) * 1.01)
+                ys.append(float(df.loc[abs_day, 'High']) * 1.01)
         if xs:
             fig.add_trace(
                 go.Scatter(
                     x=xs,
                     y=ys,
-                    mode="markers",
-                    marker=dict(size=10, color="#7E57C2", symbol="circle"),
-                    name="要監視ポイント",
-                    hovertemplate="要監視ポイント<br>%{x|%Y-%m-%d}<br>取引増 × 動き小<extra></extra>",
+                    mode='markers',
+                    marker=dict(size=10, color='#7E57C2', symbol='circle'),
+                    name='要監視ポイント',
+                    hovertemplate='要監視ポイント<br>%{x|%Y-%m-%d}<br>出来高増 × 値動き小<extra></extra>'
                 ),
-                row=1,
-                col=1,
+                row=1, col=1
             )
-
-    # ===== 出来高（詳細表示のみ）=====
-    if show_details:
-        avg_vol = df["Volume"].tail(60).mean() if len(df) >= 60 else df["Volume"].mean()
-        colors = []
-        for _, r in df.iterrows():
-            vol_ratio = r["Volume"] / avg_vol if avg_vol > 0 else 1
-            price_change = abs(r["Close"] / r["Open"] - 1) * 100 if r["Open"] > 0 else 0
-            if vol_ratio >= 1.5 and price_change <= 1.5:
-                colors.append("#7E57C2")
-            elif vol_ratio >= 1.5:
-                colors.append("#FF7043")
-            elif vol_ratio >= 1.2:
-                colors.append("#FFB74D")
-            else:
-                colors.append("#90A4AE")
-
-        fig.add_trace(
-            go.Bar(
-                x=df.index,
-                y=df["Volume"],
-                marker_color=colors,
-                marker_line_width=0,
-                name="出来高",
-                opacity=0.9,
-            ),
-            row=2,
-            col=1,
-        )
-
-        # 出来高背景
-        fig.add_shape(
-            type="rect",
-            xref="paper",
-            yref="paper",
-            x0=0,
-            y0=0,
-            x1=0.88,
-            y1=0.35,
-            fillcolor="rgba(240, 244, 248, 0.8)",
-            line=dict(width=0),
-            layer="below",
-        )
-
-    # ===== 右：価格帯別売買高（VP）=====
-    if volume_profile is not None and not volume_profile.empty:
-        max_vol = float(volume_profile["volume"].max()) if float(volume_profile["volume"].max()) > 0 else 1.0
+    
+    # ===== 出来高バー =====
+    colors = []
+    for idx, row in df.iterrows():
+        vol_ratio = row['Volume'] / avg_vol if avg_vol > 0 else 1
+        price_change = abs(row['Close'] / row['Open'] - 1) * 100 if row['Open'] > 0 else 0
+        
+        # FlowScore（出来高増 & 価格安定）
+        if vol_ratio >= 1.5 and price_change <= 1.5:
+            colors.append('#7E57C2')  # 紫（FlowScore）
+        elif vol_ratio >= 1.5:
+            colors.append('#FF7043')  # オレンジ（出来高増）
+        elif vol_ratio >= 1.2:
+            colors.append('#FFB74D')  # 薄いオレンジ
+        else:
+            colors.append('#90A4AE')  # グレー（通常）
+    
+    fig.add_trace(
+        go.Bar(
+            x=df.index,
+            y=df['Volume'],
+            marker_color=colors,
+            marker_line_width=0,
+            name='出来高',
+            opacity=0.9
+        ),
+        row=2, col=1
+    )
+    
+    # ===== 価格帯別売買高 =====
+    if not volume_profile.empty:
+        max_vol = volume_profile['volume'].max()
         vp_colors = []
-
-        hl_low = hl_high = None
-        if highlight_range:
-            try:
-                hl_low = float(highlight_range.get("price_low"))
-                hl_high = float(highlight_range.get("price_high"))
-            except Exception:
-                hl_low = hl_high = None
-
         for _, row in volume_profile.iterrows():
-            intensity = float(row["volume"]) / max_vol
+            intensity = row['volume'] / max_vol if max_vol > 0 else 0
             r = int(126 + (63 - 126) * intensity)
             g = int(87 + (81 - 87) * intensity)
             b = int(194 + (181 - 194) * intensity)
-            color = f"rgba({r}, {g}, {b}, 0.7)"
-
-            if show_reason and hl_low is not None and hl_high is not None:
-                try:
-                    if abs(float(row["price_low"]) - hl_low) < 1e-9 and abs(float(row["price_high"]) - hl_high) < 1e-9:
-                        color = "rgba(30, 136, 229, 0.95)"
-                except Exception:
-                    pass
-
-            vp_colors.append(color)
-
+            vp_colors.append(f'rgba({r}, {g}, {b}, 0.7)')
+        
         fig.add_trace(
             go.Bar(
-                y=volume_profile["price"],
-                x=volume_profile["volume"],
-                orientation="h",
+                y=volume_profile['price'],
+                x=volume_profile['volume'],
+                orientation='h',
                 marker_color=vp_colors,
                 marker_line_width=0,
-                name="価格帯別売買高",
+                name='価格帯別売買高'
             ),
-            row=1,
-            col=2,
+            row=1, col=2
         )
-
-    # ===== レイアウト =====
+    
+    # ===== レイアウト設定 =====
     fig.update_layout(
         title_text="",
-        height=520 if show_details else 420,
+        height=500,
         showlegend=False,
-        paper_bgcolor="#FFFFFF",
-        plot_bgcolor="#FAFAFA",
-        font=dict(family="Arial, sans-serif", size=11, color="#333333"),
-        margin=dict(l=10, r=10, t=20, b=30),
+        paper_bgcolor='#FFFFFF',
+        plot_bgcolor='#FAFAFA',
+        font=dict(family="Arial, sans-serif", size=11, color='#333333'),
+        margin=dict(l=10, r=10, t=30, b=30),
         xaxis_rangeslider_visible=False,
     )
-
-    # 左（ローソク足）
-    fig.update_yaxes(gridcolor="#E8E8E8", showgrid=True, zeroline=False, side="right", tickfont=dict(size=10), row=1, col=1)
-    fig.update_xaxes(gridcolor="#E8E8E8", showgrid=True, zeroline=False, showticklabels=show_details is False, tickfont=dict(size=9), row=1, col=1)
-
-    # 右（VP）はローソク足の価格軸と連動（ズレ防止）
-    fig.update_yaxes(matches="y", showticklabels=False, showgrid=False, row=1, col=2)
+    
+    # ローソク足エリア
+    fig.update_yaxes(
+        title_text="",
+        gridcolor='#E8E8E8',
+        showgrid=True,
+        zeroline=False,
+        side='right',
+        tickfont=dict(size=10),
+        row=1, col=1
+    )
+    fig.update_xaxes(
+        gridcolor='#E8E8E8',
+        showgrid=True,
+        zeroline=False,
+        showticklabels=False,
+        row=1, col=1
+    )
+    
+    # 出来高エリア（背景色で差別化）
+    fig.update_yaxes(
+        title_text="",
+        gridcolor='#D0D0D0',
+        showgrid=True,
+        zeroline=False,
+        tickfont=dict(size=9),
+        row=2, col=1
+    )
+    fig.update_xaxes(
+        gridcolor='#D0D0D0',
+        showgrid=True,
+        zeroline=False,
+        tickfont=dict(size=9),
+        row=2, col=1
+    )
+    
+    fig.add_shape(
+        type="rect",
+        xref="paper", yref="paper",
+        x0=0, y0=0, x1=0.88, y1=0.35,
+        fillcolor="rgba(240, 244, 248, 0.8)",
+        line=dict(width=0),
+        layer="below"
+    )
+    
+    # 価格帯別売買高エリア
+    fig.update_yaxes(showticklabels=False, showgrid=False, row=1, col=2)
     fig.update_xaxes(showticklabels=False, showgrid=False, row=1, col=2)
-
-    # 下段（出来高）
-    if show_details:
-        fig.update_yaxes(gridcolor="#D0D0D0", showgrid=True, zeroline=False, tickfont=dict(size=9), row=2, col=1)
-        fig.update_xaxes(gridcolor="#D0D0D0", showgrid=True, zeroline=False, tickfont=dict(size=9), row=2, col=1)
-
+    
     return fig
 
 
@@ -915,6 +790,19 @@ def get_logo_base64():
     except:
         return None
 
+
+# ==========================================
+# タグ正規化（フィルター＆表示用）
+# 先頭の記号（例：○）を除去して判定を安定させる
+# ==========================================
+_TAG_PREFIX_RE = re.compile(r"^[\s\u3000]*[○●■★※・▶▷▲▼◇◆□✦✧✱✳︎⭐️]+")
+
+def norm_tag(tag: str) -> str:
+    if tag is None:
+        return ""
+    s = str(tag).strip()
+    s = _TAG_PREFIX_RE.sub("", s).strip()
+    return s
 
 # ==========================================
 # データ読み込み
@@ -1177,182 +1065,223 @@ def format_volume_pct(v) -> str:
 
 
 
-
-# ==========================================
-# タグ正規化 / ゾーン判定（初心者向けUI用）
-# ==========================================
-# tags に先頭記号（○など）が付くケースがあるため除去して扱う
-_TAG_PREFIX_RE = re.compile(r"^[\s\u3000]*[○●■★※・▶▷▲▼◇◆□◆◆✦✧✱✳︎⭐️]+")
-
-def _norm_tag(t) -> str:
-    if t is None:
-        return ""
-    s = str(t).strip()
-    s = _TAG_PREFIX_RE.sub("", s).strip()
-    return s
-
-def _norm_tags(item: dict) -> set:
-    tags = item.get("tags") or []
-    out = set()
-    for x in tags:
-        nx = _norm_tag(x)
-        if nx:
-            out.add(nx)
-    return out
-
-def _is_watch(item: dict) -> bool:
-    # display_state / state / tags の揺れを吸収
-    stt = (item.get("display_state") or item.get("state") or "").strip()
-    if stt == "要監視":
-        return True
-    tags = _norm_tags(item)
-    return ("要監視" in tags) or any("要監視" in t for t in tags)
-
-def _zone_of(item: dict) -> str:
-    # まず tags を優先
-    tags = _norm_tags(item)
-    if "下側ゾーン" in tags:
-        return "下側ゾーン"
-    if "上側ゾーン" in tags:
-        return "上側ゾーン"
-
-    # tags がない場合は gap から推定（データ互換用）
-    gap = item.get("support_gap_pct")
-    try:
-        if gap is not None:
-            g = float(gap)
-            if g <= 3.0:
-                return "下側ゾーン"
-            if g >= 25.0:
-                return "上側ゾーン"
-    except Exception:
-        pass
-
-    return "中央"
-
-
 # ==========================================
 # カード表示
 # ==========================================
-
 def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
-    """銘柄カード（初心者向け：考えさせないUI）"""
+    """銘柄カードを表示（LEVEL + FlowScore + 状態タグ）"""
+    flow_score = d.get("flow_score", 0)
     level = int(d.get("level", 0))
+    ma_score = d.get("ma_score", None)
     state = d.get("display_state", d.get("state", "観測中"))
-    zone = _zone_of(d)
-    is_watch = _is_watch(d)
+    tags_raw = d.get("tags", []) or []
+    tags = [norm_tag(t) for t in tags_raw if norm_tag(t)]
 
-    # ゾーンの見た目
-    zone_style = {
-        "下側ゾーン": ("rgba(30, 136, 229, 0.12)", "#1565C0"),
-        "上側ゾーン": ("rgba(198, 40, 40, 0.10)", "#C62828"),
-        "中央": ("rgba(158, 158, 158, 0.15)", "#616161"),
-    }
-    z_bg, z_fg = zone_style.get(zone, zone_style["中央"])
+    # FlowScoreに基づくカードクラス（見た目の強弱）
+    if flow_score >= FLOW_SCORE_HIGH:
+        card_class = "high"
+        score_class = "high"
+    elif flow_score >= FLOW_SCORE_MEDIUM:
+        card_class = "medium"
+        score_class = "medium"
+    else:
+        card_class = ""
+        score_class = "normal"
+
     level_color = LEVEL_COLORS.get(level, "#9E9E9E")
 
     code = ticker.replace(".T", "")
     url = f"https://finance.yahoo.co.jp/quote/{code}.T"
-    name_jp = TICKER_NAMES_JP.get(ticker, d.get("name", code))
 
-    # 1行説明（売買助言に見えない“状態”表現）
-    if zone == "下側ゾーン":
-        hint = "下値帯に近いです"
-    elif zone == "上側ゾーン":
-        hint = "上方に離れています"
-    else:
-        hint = "帯から離れています"
+    # 日本語名
+    name_jp = TICKER_NAMES_JP.get(ticker, d.get('name', code))
 
-    watch_html = ""
-    if is_watch:
-        watch_html = '<span style="background:#E8EAF6;color:#5C6BC0;padding:2px 8px;border-radius:999px;font-size:0.70rem;margin-left:8px;font-weight:800;">要監視</span>'
+    # タグ表示（最大4つ）
+    tags_html = ""
+    for tag in tags[:4]:
+        # 要監視は目立たせる（グレー禁止）
+        if tag == "要監視":
+            tags_html += '<span style="background:#E8EAF6;color:#5C6BC0;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">要監視</span>'
+        elif tag == "下側ゾーン":
+            tags_html += '<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">下側ゾーン</span>'
+        elif tag == "上側ゾーン":
+            tags_html += '<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">上側ゾーン</span>'
+        else:
+            tags_html += f'<span style="background:#F3F4F6;color:#444;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;">{tag}</span>'
 
-    st.markdown(
-        f"""
-    <div class="stock-card">
-        <div class="stock-header">
-            <div>
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                    <span style="background:{z_bg};color:{z_fg};padding:2px 10px;border-radius:999px;font-size:0.70rem;font-weight:800;">{zone}</span>
-                    {watch_html}
-                </div>
-                <a href="{url}" target="_blank" class="stock-title">{ticker.replace('.T','')} {name_jp}</a>
-                <div class="stock-sub">¥{d.get('price',0):,.0f}　<span style="opacity:0.85;">{hint}</span></div>
+    # 表示用スコア（主はFlow。補助でLEVEL）">{tag}</span>'
+
+    # 表示用スコア（主はFlow。補助でLEVEL）
+    score_text = f"{flow_score}"
+    level_text = f"LEVEL {level}" if level > 0 else "LEVEL -"
+
+    st.markdown(f"""
+    <div class="spike-card {card_class}">
+        <div class="card-header">
+            <div class="ticker-name">
+                <a href="{url}" target="_blank">{ticker}</a>
+                <span style="font-size:0.75rem;color:#888;margin-left:6px;">{str(name_jp)[:12]}</span>
             </div>
-            <div class="level-badge" style="background:{level_color};">LEVEL {level}</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span style="background:{level_color};color:white;padding:3px 10px;border-radius:12px;font-size:0.75rem;font-weight:700;">{level_text}</span>
+                <div class="ratio-badge {score_class}">{score_text}</div>
+            </div>
         </div>
-
-        <div class="stock-info">
+        <div class="card-body">
+            <div><span class="info-label">現在値</span><br><span class="info-value" style="color:#C41E3A;font-weight:600;">¥{d.get('price',0):,.0f}</span></div>
             <div><span class="info-label">状態</span><br><span class="info-value">{state}</span></div>
             <div><span class="info-label">時価総額</span><br><span class="info-value">{d.get('market_cap_oku',0):,}億円</span></div>
             <div>
                 <span class="info-label">出来高</span><br>
                 <span class="info-value">{d.get('vol_ratio', 0)}x</span>
                 <div style="margin-top:2px;font-size:0.72rem;color:#64748B;font-weight:700;">
-                    株数比 {format_volume_pct(d.get('volume_of_shares_pct') or d.get('shares_pct') or d.get('volume_shares_pct'))}
+                    株数比 {format_volume_pct(d.get('volume_of_shares_pct'))}
                 </div>
             </div>
         </div>
+        <div style="padding:0 0.8rem 0.5rem;font-size:0.7rem;">{tags_html}</div>
     </div>
-    """,
-        unsafe_allow_html=True,
-    )
+    """, unsafe_allow_html=True)
 
+    # チャートは画面遷移せず、その場で表示切替
     chart_open = st.session_state.setdefault("chart_open", {})
     is_open = bool(chart_open.get(ticker, False))
 
-    toggle_label = "📊 見る" if not is_open else "📊 閉じる"
-    if st.button(toggle_label, key=f"chart_{ticker}", use_container_width=True):
+    toggle_label = "📊 チャートを閉じる" if is_open else "📊 チャートを表示"
+    if st.button(toggle_label, key=f"chart_toggle_{ticker}", use_container_width=True):
         chart_open[ticker] = not is_open
         st.session_state["chart_open"] = chart_open
         st.rerun()
 
     if chart_open.get(ticker, False):
-        # 期間（ボタン4つ）
-        pkey = f"chart_period::{ticker}"
-        if pkey not in st.session_state:
-            st.session_state[pkey] = "6mo"
-
-        cols = st.columns(4)
+        # 期間選択（見た目はピル、実体はボタン）
+        period_key = f"period_{ticker}"
+        current_period = st.session_state.get(period_key, "6mo")
         periods = [("1ヶ月", "1mo"), ("3ヶ月", "3mo"), ("6ヶ月", "6mo"), ("1年", "1y")]
-        for i, (label, val) in enumerate(periods):
+
+        st.markdown('<div class="pill-row">', unsafe_allow_html=True)
+        cols = st.columns(len(periods))
+        for i, (lab, val) in enumerate(periods):
             with cols[i]:
-                if st.button(label, use_container_width=True, key=f"{ticker}::{val}"):
-                    st.session_state[pkey] = val
+                btn_type = "primary" if current_period == val else "secondary"
+                if st.button(lab, key=f"{period_key}_{val}", use_container_width=True, type=btn_type):
+                    st.session_state[period_key] = val
+                    # ボタン押下の反映ズレを防ぐ（即時に選択状態を更新）
                     st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        # 見たい人だけ：理由 / 詳細
-        ck1, ck2 = st.columns([1, 1])
-        rkey = f"show_reason::{ticker}"
-        dkey = f"show_details::{ticker}"
-        if rkey not in st.session_state:
-            st.session_state[rkey] = False
-        if dkey not in st.session_state:
-            st.session_state[dkey] = False
+        period = st.session_state.get(period_key, "6mo")
 
-        with ck1:
-            st.session_state[rkey] = st.toggle("理由を見る", value=bool(st.session_state[rkey]), key=f"toggle_reason::{ticker}")
-        with ck2:
-            st.session_state[dkey] = st.toggle("詳細", value=bool(st.session_state[dkey]), key=f"toggle_details::{ticker}")
+        with st.spinner("チャートを読み込み中..."):
+            name = d.get("name", ticker)
+            avg_volume = d.get("avg_volume", 0)
+            flow_details = d.get("flow_details", {})
+            fig = create_chart(ticker, name, period, avg_volume, flow_details)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
-        if st.session_state[rkey]:
-            st.caption("理由：右側の青は、直近で取引が増えた価格帯です。")
+        st.caption("● 要監視ポイント：出来高増 × 値動き小 の条件が一致した日（売買の合図ではなく、状態の記録）")
+
+        st.caption("※表示は市場データの可視化です。銘柄推奨・売買助言ではありません。")
+
+
+# ==========================================
+# ログイン画面
+# ==========================================
+def show_login_page():
+    """ログイン画面を表示"""
+    logo_base64 = get_logo_base64()
+    
+    st.markdown("<div style='height: 60px;'></div>", unsafe_allow_html=True)
+    
+    # ログインコンテナ
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        # ロゴ表示
+        if logo_base64:
+            st.markdown(f"""
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+                <img src="data:image/png;base64,{logo_base64}" style="max-width: 280px; width: 90%;">
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            st.caption("下値帯は「今どこに近いか」を見るための目安です。")
-
-        period = st.session_state.get(pkey, "6mo")
-        fig = create_chart(
-            ticker,
-            name_jp,
-            period=period,
-            avg_volume=d.get("avg_volume", 0),
-            flow_data=d,
-            show_details=bool(st.session_state[dkey]),
-            show_reason=bool(st.session_state[rkey]),
+            st.markdown("<h1 style='text-align:center;'>🦅 源太AI ハゲタカSCOPE</h1>", unsafe_allow_html=True)
+        
+        # ログインフォーム
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 1rem;">
+            <p style="color: #666; font-size: 0.9rem;">ログインしてください</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # エラーメッセージ表示
+        if st.session_state.get("login_error"):
+            st.markdown("""
+            <div class="login-error">
+                ❌ パスワードまたはメールアドレスが正しくありません
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # パスワード/メールアドレス入力
+        login_input = st.text_input(
+            "パスワード / メールアドレス",
+            type="default",
+            placeholder="共通パスワード or 登録済みメールアドレス",
+            key="login_input"
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        
+        # ログインボタン
+        if st.button("ログイン", use_container_width=True, type="primary"):
+            # キャッシュをクリア（新しいセッションの開始）
+            st.cache_data.clear()
+            
+            # 共通パスワードでログイン
+            if login_input == MASTER_PASSWORD:
+                st.session_state["logged_in"] = True
+                st.session_state["login_error"] = False
+                st.session_state["login_type"] = "master"
+                st.session_state["email_address"] = ""
+                st.session_state["app_password"] = ""
+                st.rerun()
+            else:
+                # メールアドレスとしてスプレッドシートを検索
+                try:
+                    settings = load_settings_by_email(login_input)
+                    if settings:
+                        st.session_state["logged_in"] = True
+                        st.session_state["login_error"] = False
+                        st.session_state["login_type"] = "email"
+                        st.session_state["email_address"] = settings["email"]
+                        st.session_state["app_password"] = decrypt_password(settings["encrypted_password"])
+                        st.rerun()
+                    else:
+                        st.session_state["login_error"] = True
+                        st.rerun()
+                except Exception as e:
+                    # エラー時はキャッシュをクリアしてエラー表示
+                    st.cache_data.clear()
+                    st.session_state["login_error"] = True
+                    st.rerun()
+        
+        # ヒント
+        st.markdown("""
+        <div style="background:#F5F5F5;border-radius:8px;padding:0.8rem;margin-top:1rem;font-size:0.75rem;color:#666;text-align:left;">
+            <p style="margin:0 0 0.3rem 0;font-weight:bold;">💡 ログイン方法</p>
+            <p style="margin:0 0 0.2rem 0;">• <strong>初回の方</strong>：共通パスワードを入力</p>
+            <p style="margin:0;">• <strong>2回目以降</strong>：登録済みのメールアドレスを入力</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # フッター
+        st.markdown("""
+        <div style="text-align: center; margin-top: 2rem; color: #aaa; font-size: 0.75rem;">
+            先乗り株カレッジ会員専用ツール
+        </div>
+        """, unsafe_allow_html=True)
 
 
+# ==========================================
+# メイン画面
+# ==========================================
 def show_main_page():
     """メインアプリ画面を表示"""
     
@@ -1480,133 +1409,45 @@ def show_main_page():
 
             st.markdown("")
 
+            # LEVELフィルター（数字のみ / 見た目はプロっぽくボタン）
+            level_options = [("ALL", "すべて"), ("4", "4"), ("3", "3"), ("2", "2"), ("1", "1")]
+            selected_level = st.session_state.get("filter_level", "すべて")
+
+            cols = st.columns(len(level_options))
+            for i, (label, value) in enumerate(level_options):
+                with cols[i]:
+                    btn_type = "primary" if selected_level == value else "secondary"
+                    if st.button(label, key=f"level_btn_{value}", use_container_width=True, type=btn_type):
+                        st.session_state["filter_level"] = value
+                        selected_level = value
+                        st.rerun()
+
+            filter_level = selected_level
+
+            if filter_level != "すべて":
+                lv = int(filter_level)
+                display_data = {k: v for k, v in display_data.items() if int(v.get("level", 0)) == lv}
+
+            # 位置タグフィルター（下側ゾーン / 上側ゾーン）
+            st.markdown("", unsafe_allow_html=True)
+            pos_options = [("ALL", "すべて"), ("下側ゾーン", "下側ゾーン"), ("上側ゾーン", "上側ゾーン")]
+            selected_pos = st.session_state.get("filter_pos", "すべて")
+
+            cols2 = st.columns(len(pos_options))
+            for i, (label, value) in enumerate(pos_options):
+                with cols2[i]:
+                    btn_type = "primary" if selected_pos == value else "secondary"
+                    if st.button(label, key=f"pos_btn_{value}", use_container_width=True, type=btn_type):
+                        st.session_state["filter_pos"] = value
+                        selected_pos = value
+                        st.rerun()
+
+            if selected_pos != "すべて":
+                display_data = {
+                    k: v for k, v in display_data.items()
+                    if selected_pos in [norm_tag(t) for t in (v.get("tags") or []) if norm_tag(t)]
+                }
             
-            # 絞り込み（ボタンを減らして“フィルターパネル”に集約）
-            if "flt_levels" not in st.session_state:
-                st.session_state["flt_levels"] = []  # 空=すべて
-            if "flt_zones" not in st.session_state:
-                st.session_state["flt_zones"] = []   # 空=すべて
-            if "flt_watch_only" not in st.session_state:
-                st.session_state["flt_watch_only"] = False
-            if "flt_query" not in st.session_state:
-                st.session_state["flt_query"] = ""
-
-            _TAG_PREFIX_RE = re.compile(r"^[\s\u3000]*[○●■★※・▶▷▲▼◇◆□◆◆✦✧✱✳︎⭐️]+")
-            def _norm_tag(t: str) -> str:
-                if t is None:
-                    return ''
-                s = str(t).strip()
-                s = _TAG_PREFIX_RE.sub('', s).strip()
-                return s
-            def _norm_tags(item: dict) -> set:
-                tags = item.get('tags') or []
-                return {_norm_tag(x) for x in tags if _norm_tag(x)}
-
-            def _is_watch(item: dict) -> bool:
-                stt = (item.get('display_state') or item.get('state') or '').strip()
-                if stt == '要監視':
-                    return True
-                tags = _norm_tags(item)
-                return ('要監視' in tags) or any('要監視' in t for t in tags)
-
-            def _apply_filters(items: dict) -> dict:
-                q = (st.session_state.get("flt_query") or "").strip().lower()
-                levels = st.session_state.get("flt_levels") or []
-                zones = st.session_state.get("flt_zones") or []
-                watch_only = bool(st.session_state.get("flt_watch_only"))
-
-                out = {}
-                for tk, it in items.items():
-                    # LEVEL
-                    if levels:
-                        try:
-                            if str(int(it.get("level", 0))) not in set(levels):
-                                continue
-                        except Exception:
-                            continue
-
-                    # ゾーン（タグ）
-                    if zones:
-                        tags = _norm_tags(it)
-                        if not any(z in tags for z in zones):
-                            continue
-
-                    # 要監視のみ
-                    if watch_only and not _is_watch(it):
-                        continue
-
-                    # 検索
-                    if q:
-                        name = (it.get("name") or "")
-                        hay = f"{tk} {name}".lower()
-                        if q not in hay:
-                            continue
-
-                    out[tk] = it
-                return out
-
-            # 上部ツールバー（フィルター）
-            tb1, tb2, tb3 = st.columns([1.2, 0.9, 2.9])
-            with tb1:
-                def _render_filter_ui():
-                    st.markdown("#### 絞り込み")
-                    st.session_state["flt_query"] = st.text_input(
-                        "検索（銘柄名・コード）",
-                        value=st.session_state.get("flt_query", ""),
-                        placeholder="例：7203 / トヨタ",
-                        label_visibility="visible",
-                    )
-
-                    st.markdown("**LEVEL**")
-                    st.session_state["flt_levels"] = st.multiselect(
-                        " ",
-                        options=["4", "3", "2", "1"],
-                        default=st.session_state.get("flt_levels") or [],
-                    )
-
-                    st.markdown("**ゾーン**")
-                    st.session_state["flt_zones"] = st.multiselect(
-                        "  ",
-                        options=["下側ゾーン", "上側ゾーン"],
-                        default=st.session_state.get("flt_zones") or [],
-                    )
-
-                    st.session_state["flt_watch_only"] = st.toggle(
-                        "要監視のみ",
-                        value=bool(st.session_state.get("flt_watch_only")),
-                    )
-
-                try:
-                    with st.popover("🔎 フィルター"):
-                        _render_filter_ui()
-                except Exception:
-                    with st.expander("🔎 フィルター", expanded=False):
-                        _render_filter_ui()
-
-            with tb2:
-                if st.button("🔄 リセット", use_container_width=True):
-                    st.session_state["flt_levels"] = []
-                    st.session_state["flt_zones"] = []
-                    st.session_state["flt_watch_only"] = False
-                    st.session_state["flt_query"] = ""
-                    st.rerun()
-
-            with tb3:
-                chips = []
-                if st.session_state.get("flt_levels"):
-                    chips.append("LEVEL: " + ",".join(st.session_state["flt_levels"]))
-                if st.session_state.get("flt_zones"):
-                    chips.append(" / ".join(st.session_state["flt_zones"]))
-                if st.session_state.get("flt_watch_only"):
-                    chips.append("要監視")
-                if st.session_state.get("flt_query"):
-                    chips.append("検索: " + st.session_state["flt_query"])
-                if chips:
-                    st.caption("  ・  ".join(chips))
-
-            # フィルター適用
-            display_data = _apply_filters(display_data)
-
             # カード表示
             if display_data:
                 for ticker, d in sorted(display_data.items(), key=lambda x: (int(x[1].get('level',0)), float(x[1].get('ma_score',0)), float(x[1].get('flow_score',0))), reverse=True):
