@@ -1393,45 +1393,119 @@ def show_main_page():
 
             st.markdown("")
 
-            # LEVELフィルター（数字のみ / 見た目はプロっぽくボタン）
-            level_options = [("ALL", "すべて"), ("4", "4"), ("3", "3"), ("2", "2"), ("1", "1")]
-            selected_level = st.session_state.get("filter_level", "すべて")
-
-            cols = st.columns(len(level_options))
-            for i, (label, value) in enumerate(level_options):
-                with cols[i]:
-                    btn_type = "primary" if selected_level == value else "secondary"
-                    if st.button(label, key=f"level_btn_{value}", use_container_width=True, type=btn_type):
-                        st.session_state["filter_level"] = value
-                        selected_level = value
-                        st.rerun()
-
-            filter_level = selected_level
-
-            if filter_level != "すべて":
-                lv = int(filter_level)
-                display_data = {k: v for k, v in display_data.items() if int(v.get("level", 0)) == lv}
-
-            # 位置タグフィルター（下側ゾーン / 上側ゾーン）
-            st.markdown("", unsafe_allow_html=True)
-            pos_options = [("ALL", "すべて"), ("下側ゾーン", "下側ゾーン"), ("上側ゾーン", "上側ゾーン")]
-            selected_pos = st.session_state.get("filter_pos", "すべて")
-
-            cols2 = st.columns(len(pos_options))
-            for i, (label, value) in enumerate(pos_options):
-                with cols2[i]:
-                    btn_type = "primary" if selected_pos == value else "secondary"
-                    if st.button(label, key=f"pos_btn_{value}", use_container_width=True, type=btn_type):
-                        st.session_state["filter_pos"] = value
-                        selected_pos = value
-                        st.rerun()
-
-            if selected_pos != "すべて":
-                display_data = {
-                    k: v for k, v in display_data.items()
-                    if selected_pos in (v.get("tags") or [])
-                }
             
+            # 絞り込み（ボタンを減らして“フィルターパネル”に集約）
+            if "flt_levels" not in st.session_state:
+                st.session_state["flt_levels"] = []  # 空=すべて
+            if "flt_zones" not in st.session_state:
+                st.session_state["flt_zones"] = []   # 空=すべて
+            if "flt_watch_only" not in st.session_state:
+                st.session_state["flt_watch_only"] = False
+            if "flt_query" not in st.session_state:
+                st.session_state["flt_query"] = ""
+
+            def _is_watch(item: dict) -> bool:
+                tags = item.get("tags") or []
+                return (item.get("display_state") == "要監視") or ("要監視" in tags)
+
+            def _apply_filters(items: dict) -> dict:
+                q = (st.session_state.get("flt_query") or "").strip().lower()
+                levels = st.session_state.get("flt_levels") or []
+                zones = st.session_state.get("flt_zones") or []
+                watch_only = bool(st.session_state.get("flt_watch_only"))
+
+                out = {}
+                for tk, it in items.items():
+                    # LEVEL
+                    if levels:
+                        try:
+                            if str(int(it.get("level", 0))) not in set(levels):
+                                continue
+                        except Exception:
+                            continue
+
+                    # ゾーン（タグ）
+                    if zones:
+                        tags = set(it.get("tags") or [])
+                        if not any(z in tags for z in zones):
+                            continue
+
+                    # 要監視のみ
+                    if watch_only and not _is_watch(it):
+                        continue
+
+                    # 検索
+                    if q:
+                        name = (it.get("name") or "")
+                        hay = f"{tk} {name}".lower()
+                        if q not in hay:
+                            continue
+
+                    out[tk] = it
+                return out
+
+            # 上部ツールバー（フィルター）
+            tb1, tb2, tb3 = st.columns([1.2, 0.9, 2.9])
+            with tb1:
+                def _render_filter_ui():
+                    st.markdown("#### 絞り込み")
+                    st.session_state["flt_query"] = st.text_input(
+                        "検索（銘柄名・コード）",
+                        value=st.session_state.get("flt_query", ""),
+                        placeholder="例：7203 / トヨタ",
+                        label_visibility="visible",
+                    )
+
+                    st.markdown("**LEVEL**")
+                    st.session_state["flt_levels"] = st.multiselect(
+                        " ",
+                        options=["4", "3", "2", "1"],
+                        default=st.session_state.get("flt_levels") or [],
+                    )
+
+                    st.markdown("**ゾーン**")
+                    st.session_state["flt_zones"] = st.multiselect(
+                        "  ",
+                        options=["下側ゾーン", "上側ゾーン"],
+                        default=st.session_state.get("flt_zones") or [],
+                    )
+
+                    st.session_state["flt_watch_only"] = st.toggle(
+                        "要監視のみ",
+                        value=bool(st.session_state.get("flt_watch_only")),
+                    )
+
+                try:
+                    with st.popover("🔎 フィルター"):
+                        _render_filter_ui()
+                except Exception:
+                    with st.expander("🔎 フィルター", expanded=False):
+                        _render_filter_ui()
+
+            with tb2:
+                if st.button("🔄 リセット", use_container_width=True):
+                    st.session_state["flt_levels"] = []
+                    st.session_state["flt_zones"] = []
+                    st.session_state["flt_watch_only"] = False
+                    st.session_state["flt_query"] = ""
+                    st.rerun()
+
+            with tb3:
+                chips = []
+                if st.session_state.get("flt_levels"):
+                    chips.append("LEVEL: " + ",".join(st.session_state["flt_levels"]))
+                if st.session_state.get("flt_zones"):
+                    chips.append(" / ".join(st.session_state["flt_zones"]))
+                if st.session_state.get("flt_watch_only"):
+                    chips.append("要監視")
+                if st.session_state.get("flt_query"):
+                    chips.append("検索: " + st.session_state["flt_query"])
+                if chips:
+                    st.caption("  ・  ".join(chips))
+
+            # フィルター適用
+            display_data = _apply_filters(display_data)
+
             # カード表示
             if display_data:
                 for ticker, d in sorted(display_data.items(), key=lambda x: (int(x[1].get('level',0)), float(x[1].get('ma_score',0)), float(x[1].get('flow_score',0))), reverse=True):
