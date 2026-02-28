@@ -396,6 +396,97 @@ def calculate_volume_profile(df: pd.DataFrame, bins: int = 20) -> pd.DataFrame:
     
     return pd.DataFrame(volume_profile)
 
+def calculate_volume_profile_with_bins(df: pd.DataFrame, price_bins: np.ndarray) -> pd.DataFrame:
+    """価格帯別売買高を計算（ビン境界を指定して揃える版）"""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    if price_bins is None or len(price_bins) < 2:
+        return pd.DataFrame()
+
+    volume_profile = []
+    for i in range(len(price_bins) - 1):
+        bin_low = float(price_bins[i])
+        bin_high = float(price_bins[i + 1])
+        bin_center = (bin_low + bin_high) / 2.0
+
+        total_volume = 0.0
+        for _, row in df.iterrows():
+            low = float(row.get('Low', np.nan))
+            high = float(row.get('High', np.nan))
+            vol = float(row.get('Volume', 0.0))
+
+            if not np.isfinite(low) or not np.isfinite(high) or vol <= 0:
+                continue
+
+            if low <= bin_high and high >= bin_low:
+                overlap_low = max(low, bin_low)
+                overlap_high = min(high, bin_high)
+                if high > low:
+                    ratio = (overlap_high - overlap_low) / (high - low)
+                else:
+                    ratio = 1.0
+                total_volume += vol * max(0.0, ratio)
+
+        volume_profile.append({
+            'price': bin_center,
+            'price_low': bin_low,
+            'price_high': bin_high,
+            'volume': float(total_volume),
+        })
+
+    return pd.DataFrame(volume_profile)
+
+
+def compute_support_from_recent_growth(
+    df: pd.DataFrame,
+    bins: int = 24,
+    recent_ratio: float = 0.33,
+    low_band_ratio: float = 0.35,
+):
+    """下値帯を「直近で伸びた価格帯 × 安値付近」から選ぶ。
+
+    返り値: (support_price_low, support_price_high)
+    """
+    if df is None or df.empty or len(df) < 40:
+        return None, None
+
+    price_min = float(df["Low"].min())
+    price_max = float(df["High"].max())
+    if (not np.isfinite(price_min)) or (not np.isfinite(price_max)) or price_max <= price_min:
+        return None, None
+
+    price_bins = np.linspace(price_min, price_max, int(bins) + 1)
+
+    n = len(df)
+    recent_len = max(20, int(n * float(recent_ratio)))
+    if n < recent_len * 2:
+        return None, None
+
+    recent_df = df.tail(recent_len)
+    prev_df = df.iloc[-recent_len * 2 : -recent_len]
+
+    vp_recent = calculate_volume_profile_with_bins(recent_df, price_bins)
+    vp_prev = calculate_volume_profile_with_bins(prev_df, price_bins)
+    if vp_recent.empty or vp_prev.empty:
+        return None, None
+
+    vp = vp_recent.copy()
+    vp["prev_volume"] = vp_prev["volume"].values
+    vp["growth"] = vp["volume"] - vp["prev_volume"]
+
+    low_limit = price_min + (price_max - price_min) * float(low_band_ratio)
+    cand = vp[vp["price_high"] <= low_limit].copy()
+    if cand.empty:
+        return None, None
+
+    cand = cand.sort_values("growth", ascending=False)
+    best = cand.iloc[0]
+    if float(best.get("growth", 0.0)) <= 0:
+        return None, None
+
+    return float(best["price_low"]), float(best["price_high"])
+
+
 
 def compute_support_zone_from_profile(vp: pd.DataFrame, threshold_ratio: float = 0.60):
     """高出来高ゾーン（POC周辺）を抽出し、下限を支持線として返す。
@@ -505,8 +596,16 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
     # 価格帯別売買高を計算（期間ごと）
     bins_map = {"1mo": 30, "3mo": 40, "6mo": 50, "1y": 60}
     volume_profile = calculate_volume_profile(df, bins=bins_map.get(period, 40))
-    # 下値ライン（高出来高ゾーン下限）
-    support_price, support_upper = compute_support_zone_from_profile(volume_profile, threshold_ratio=0.60)
+    # 下値帯（直近で伸びた価格帯 × 安値付近）
+    support_price, support_upper = compute_support_from_recent_growth(
+        df,
+        bins=bins_map.get(period, 40),
+        recent_ratio=0.33,
+        low_band_ratio=0.35,
+    )
+    # 取れない場合は、従来の高出来高ゾーン下限にフォールバック
+    if support_price is None:
+        support_price, support_upper = compute_support_zone_from_profile(volume_profile, threshold_ratio=0.60)
 
     
     # サブプロット作成
@@ -537,24 +636,48 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         ),
         row=1, col=1
     )
-    # 下値ラインを描画（見える化：売買指示ではなく位置の目安）
+    # 下値帯を描画（見える化：売買指示ではなく位置の目安）
     if support_price is not None:
         try:
-            fig.add_hline(y=support_price, line_dash='dot', line_width=1, line_color='#1E88E5', row=1, col=1)
             period_label = {"1mo":"1ヶ月","3mo":"3ヶ月","6mo":"6ヶ月","1y":"1年"}.get(period, period)
+
+            if support_upper is not None and support_upper > support_price:
+                # 帯（レンジ）で表示
+                fig.add_hrect(
+                    y0=support_price,
+                    y1=support_upper,
+                    line_width=1,
+                    line_color="#1E88E5",
+                    fillcolor="rgba(30,136,229,0.12)",
+                    row=1,
+                    col=1,
+                )
+                label_text = f"下値帯（{period_label}） {support_price:,.0f}〜{support_upper:,.0f}"
+                y_annot = support_upper
+            else:
+                # 取得できない場合は線のみ
+                fig.add_hline(
+                    y=support_price,
+                    line_dash="dot",
+                    line_width=1,
+                    line_color="#1E88E5",
+                    row=1,
+                    col=1,
+                )
+                label_text = f"下値ライン（{period_label}） {support_price:,.0f}"
+                y_annot = support_price
+
             fig.add_annotation(
                 x=df.index[-1],
-                y=support_price,
-                text=f'下値ライン（{period_label}） {support_price:,.0f}',
+                y=y_annot,
+                text=label_text,
                 showarrow=False,
-                xanchor='right',
-                yanchor='bottom',
-                font=dict(size=10, color='#1E88E5'),
+                xanchor="right",
+                yanchor="bottom",
+                font=dict(size=10, color="#1E88E5"),
                 row=1,
-                col=1
+                col=1,
             )
-        except Exception:
-            pass
     
     # 「要監視ポイント」マーカー（出来高増 × 値動き小の条件一致日）
     # ※売買の合図ではなく、状態変化の“記録”として表示
@@ -610,11 +733,28 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         max_vol = volume_profile['volume'].max()
         vp_colors = []
         for _, row in volume_profile.iterrows():
+            # 通常は出来高の濃淡で色をつける
             intensity = row['volume'] / max_vol if max_vol > 0 else 0
             r = int(126 + (63 - 126) * intensity)
             g = int(87 + (81 - 87) * intensity)
             b = int(194 + (181 - 194) * intensity)
-            vp_colors.append(f'rgba({r}, {g}, {b}, 0.7)')
+            color = f'rgba({r}, {g}, {b}, 0.7)'
+
+            # 下値帯に該当する価格帯は強調（根拠が分かるように）
+            try:
+                pl = float(row.get('price_low', np.nan))
+                ph = float(row.get('price_high', np.nan))
+                if support_price is not None:
+                    if support_upper is not None and support_upper > support_price:
+                        if (ph >= support_price) and (pl <= support_upper):
+                            color = 'rgba(30,136,229,0.95)'
+                    else:
+                        if (pl <= float(support_price)) and (ph >= float(support_price)):
+                            color = 'rgba(30,136,229,0.95)'
+            except Exception:
+                pass
+
+            vp_colors.append(color)
         
         fig.add_trace(
             go.Bar(
