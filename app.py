@@ -86,9 +86,10 @@ def _norm_tag(t) -> str:
         return ""
     if "要監視" in t:
         return "要監視"
-    # 上側/下側ゾーンは本画面では使用しないため除外
-    if ("下側" in t) or ("割安" in t) or ("上側" in t) or ("割高" in t):
-        return ""
+    if "下側" in t or "割安" in t:
+        return "下側ゾーン"
+    if "上側" in t or "割高" in t:
+        return "上側ゾーン"
     return t
 
 def _tags_list(x) -> List[str]:
@@ -130,7 +131,7 @@ def _compute_zone_thresholds(items: Dict[str, Dict], base_low: float = 5.0, base
 
     return float(low_cut), float(high_cut), len(gaps)
 
-def _normalize_item(it: Dict, low_cut: Optional[float], high_cut: Optional[float]) -> Dict:
+def _normalize_item(it: Dict, low_cut: float, high_cut: float) -> Dict:
     """表示/フィルター向けに、状態・タグ・ゾーンを安定化"""
     d = dict(it) if isinstance(it, dict) else {}
 
@@ -160,7 +161,20 @@ def _normalize_item(it: Dict, low_cut: Optional[float], high_cut: Optional[float
     if has_watch:
         state = "要監視"
     d["display_state"] = state
-    # 上側/下側ゾーン機能は無効化（タグは付与しません）
+
+    # ゾーンは tags / support_gap_pct のどちらからでも付与できるようにする
+    has_zone = ("下側ゾーン" in tags_norm) or ("上側ゾーン" in tags_norm)
+    gap = d.get("support_gap_pct")
+    if (not has_zone) and (gap is not None):
+        try:
+            fg = float(gap)
+            if np.isfinite(fg):
+                if fg <= low_cut:
+                    tags_norm.append("下側ゾーン")
+                elif fg >= high_cut:
+                    tags_norm.append("上側ゾーン")
+        except Exception:
+            pass
 
     # タグ重複排除（順序維持）
     uniq = []
@@ -461,28 +475,6 @@ div.stButton > button{
   font-weight: 800 !important;
   padding: .55rem .9rem !important;
 }
-
-/* フロースコア（赤い数字）の説明ラベル */
-.ratio-badge::after{content:'フロー'; display:block; font-size:0.55rem; opacity:0.75; margin-top:2px; font-weight:700;}
-
-/* 診断カート（右下固定） */
-.diag-cart-wrap{
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  width: 280px;
-  max-width: 92vw;
-  background: rgba(255,255,255,0.97);
-  border: 1px solid rgba(0,0,0,0.08);
-  border-radius: 16px;
-  box-shadow: 0 10px 24px rgba(0,0,0,0.12);
-  padding: 12px 12px 10px;
-  z-index: 9999;
-}
-.diag-cart-title{font-weight:900; font-size:0.95rem; margin-bottom:6px;}
-.diag-cart-sub{font-size:0.72rem; color:#64748B; margin-bottom:8px; line-height:1.35;}
-.diag-cart-item{display:flex; align-items:center; justify-content:space-between; gap:8px; margin:6px 0;}
-.diag-cart-code{font-weight:800; font-size:0.9rem;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1342,11 +1334,11 @@ def format_volume_pct(v) -> str:
 # カード表示
 # ==========================================
 def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
-    """銘柄カードを表示（LEVEL + フロースコア + 状態）"""
+    """銘柄カードを表示（LEVEL + FlowScore + 状態タグ）"""
     flow_score = d.get("flow_score", 0)
     level = int(d.get("level", 0))
+    ma_score = d.get("ma_score", None)
     state = d.get("display_state", d.get("state", "観測中"))
-
     # 状態表示（ツールチップ付き）
     _state_clean = _norm_label(state) or str(state).strip()
     _STATE_DESC = {
@@ -1364,7 +1356,7 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
 
     tags = d.get("tags", [])
 
-    # フロースコアに基づく強調
+    # FlowScoreに基づくカードクラス（見た目の強弱）
     if flow_score >= FLOW_SCORE_HIGH:
         card_class = "high"
         score_class = "high"
@@ -1379,16 +1371,26 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
 
     code = ticker.replace(".T", "")
     url = f"https://finance.yahoo.co.jp/quote/{code}.T"
+
+    # 日本語名
     name_jp = TICKER_NAMES_JP.get(ticker, d.get('name', code))
 
-    # タグ表示（要監視だけ目立たせる。ゾーンは本画面で無効）
+    # タグ表示（最大4つ）
     tags_html = ""
-    for tag in (tags or [])[:4]:
+    for tag in tags[:4]:
+        # 要監視は目立たせる（グレー禁止）
         if tag == "要監視":
             tags_html += '<span style="background:#E8EAF6;color:#5C6BC0;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">要監視</span>'
+        elif tag == "下側ゾーン":
+            tags_html += '<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">下側ゾーン</span>'
+        elif tag == "上側ゾーン":
+            tags_html += '<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">上側ゾーン</span>'
         else:
             tags_html += f'<span style="background:#F3F4F6;color:#444;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;">{tag}</span>'
 
+    # 表示用スコア（主はFlow。補助でLEVEL）">{tag}</span>'
+
+    # 表示用スコア（主はFlow。補助でLEVEL）
     score_text = f"{flow_score}"
     level_text = f"LEVEL {level}" if level > 0 else "LEVEL -"
 
@@ -1401,7 +1403,7 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
                 <span style="background:{level_color};color:white;padding:3px 10px;border-radius:12px;font-size:0.75rem;font-weight:700;">{level_text}</span>
-                <div class="ratio-badge {score_class}" title="フロー（需給）スコアです。数字が大きいほど、直近の売買の偏り（需給の変化）が強い可能性があります。売買助言ではなく、観測の目安です。">{score_text}</div>
+                <div class="ratio-badge {score_class}">{score_text}</div>
             </div>
         </div>
         <div class="card-body">
@@ -1420,17 +1422,145 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
     </div>
     """, unsafe_allow_html=True)
 
-    # 診断カートへ追加（最大5件）
-    if "diag_cart" not in st.session_state:
-        st.session_state["diag_cart"] = []
-    in_cart = ticker in st.session_state["diag_cart"]
-    btn_label = "✅ 診断カートに追加済み" if in_cart else "🛒 診断カートに追加"
-    if st.button(btn_label, key=f"add_to_cart_{ticker}", use_container_width=True, disabled=in_cart):
-        if len(st.session_state["diag_cart"]) < 5:
-            st.session_state["diag_cart"].append(ticker)
-        else:
-            st.warning("診断カートは最大5件までです。不要な銘柄を外してから追加してください。")
+    # チャートは画面遷移せず、その場で表示切替
+    chart_open = st.session_state.setdefault("chart_open", {})
+    is_open = bool(chart_open.get(ticker, False))
+
+    toggle_label = "📊 チャートを閉じる" if is_open else "📊 チャートを表示"
+    if st.button(toggle_label, key=f"chart_toggle_{ticker}", use_container_width=True):
+        chart_open[ticker] = not is_open
+        st.session_state["chart_open"] = chart_open
         st.rerun()
+
+    if chart_open.get(ticker, False):
+        # 期間選択（見た目はピル、実体はボタン）
+        period_key = f"period_{ticker}"
+        current_period = st.session_state.get(period_key, "6mo")
+        periods = [("1ヶ月", "1mo"), ("3ヶ月", "3mo"), ("6ヶ月", "6mo"), ("1年", "1y")]
+
+        st.markdown('<div class="pill-row">', unsafe_allow_html=True)
+        cols = st.columns(len(periods))
+        for i, (lab, val) in enumerate(periods):
+            with cols[i]:
+                btn_type = "primary" if current_period == val else "secondary"
+                if st.button(lab, key=f"{period_key}_{val}", use_container_width=True, type=btn_type):
+                    st.session_state[period_key] = val
+                    # ボタン押下の反映ズレを防ぐ（即時に選択状態を更新）
+                    st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        period = st.session_state.get(period_key, "6mo")
+
+        with st.spinner("チャートを読み込み中..."):
+            name = d.get("name", ticker)
+            avg_volume = d.get("avg_volume", 0)
+            flow_details = d.get("flow_details", {})
+            fig = create_chart(ticker, name, period, avg_volume, flow_details)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+        st.caption("● 要監視ポイント：出来高増 × 値動き小 の条件が一致した日（売買の合図ではなく、状態の記録）")
+
+        st.caption("※表示は市場データの可視化です。銘柄推奨・売買助言ではありません。")
+
+
+# ==========================================
+# ログイン画面
+# ==========================================
+def show_login_page():
+    """ログイン画面を表示"""
+    logo_base64 = get_logo_base64()
+    
+    st.markdown("<div style='height: 60px;'></div>", unsafe_allow_html=True)
+    
+    # ログインコンテナ
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        # ロゴ表示
+        if logo_base64:
+            st.markdown(f"""
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+                <img src="data:image/png;base64,{logo_base64}" style="max-width: 280px; width: 90%;">
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("<h1 style='text-align:center;'>🦅 源太AI ハゲタカSCOPE</h1>", unsafe_allow_html=True)
+        
+        # ログインフォーム
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 1rem;">
+            <p style="color: #666; font-size: 0.9rem;">ログインしてください</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # エラーメッセージ表示
+        if st.session_state.get("login_error"):
+            st.markdown("""
+            <div class="login-error">
+                ❌ パスワードまたはメールアドレスが正しくありません
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # パスワード/メールアドレス入力
+        login_input = st.text_input(
+            "パスワード / メールアドレス",
+            type="default",
+            placeholder="共通パスワード or 登録済みメールアドレス",
+            key="login_input"
+        )
+        
+        # ログインボタン
+        if st.button("ログイン", use_container_width=True, type="primary"):
+            # キャッシュをクリア（新しいセッションの開始）
+            st.cache_data.clear()
+            
+            # 共通パスワードでログイン
+            if login_input == MASTER_PASSWORD:
+                st.session_state["logged_in"] = True
+                st.session_state["login_error"] = False
+                st.session_state["login_type"] = "master"
+                st.session_state["email_address"] = ""
+                st.session_state["app_password"] = ""
+                st.rerun()
+            else:
+                # メールアドレスとしてスプレッドシートを検索
+                try:
+                    settings = load_settings_by_email(login_input)
+                    if settings:
+                        st.session_state["logged_in"] = True
+                        st.session_state["login_error"] = False
+                        st.session_state["login_type"] = "email"
+                        st.session_state["email_address"] = settings["email"]
+                        st.session_state["app_password"] = decrypt_password(settings["encrypted_password"])
+                        st.rerun()
+                    else:
+                        st.session_state["login_error"] = True
+                        st.rerun()
+                except Exception as e:
+                    # エラー時はキャッシュをクリアしてエラー表示
+                    st.cache_data.clear()
+                    st.session_state["login_error"] = True
+                    st.rerun()
+        
+        # ヒント
+        st.markdown("""
+        <div style="background:#F5F5F5;border-radius:8px;padding:0.8rem;margin-top:1rem;font-size:0.75rem;color:#666;text-align:left;">
+            <p style="margin:0 0 0.3rem 0;font-weight:bold;">💡 ログイン方法</p>
+            <p style="margin:0 0 0.2rem 0;">• <strong>初回の方</strong>：共通パスワードを入力</p>
+            <p style="margin:0;">• <strong>2回目以降</strong>：登録済みのメールアドレスを入力</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # フッター
+        st.markdown("""
+        <div style="text-align: center; margin-top: 2rem; color: #aaa; font-size: 0.75rem;">
+            先乗り株カレッジ会員専用ツール
+        </div>
+        """, unsafe_allow_html=True)
+
+
+# ==========================================
+# メイン画面
+# ==========================================
 def show_main_page():
     """メインアプリ画面を表示"""
     
@@ -1439,6 +1569,12 @@ def show_main_page():
         show_disclaimer_page()
         return
     
+    # チャート表示モードの場合
+    if st.session_state.get("show_chart") and st.session_state.get("selected_ticker"):
+        ticker = st.session_state["selected_ticker"]
+        stock_info = st.session_state.get("selected_stock_info", {})
+        show_chart_modal(ticker, stock_info)
+        return
     
     logo_base64 = get_logo_base64()
     
@@ -1536,10 +1672,10 @@ def show_main_page():
                 display_data = data.get("all_data", {})
             else:
                 display_data = data.get("data", {})
-            # 表記ゆれ吸収（状態/タグを正規化）
-            # ※この画面ではチャート・上側/下側ゾーン機能は無効化しています
-            display_data = {tk: _normalize_item(it, None, None) for tk, it in (display_data or {}).items()}
 
+            # 表記ゆれ吸収 + ゾーン付与（0件を避けつつ“雑”になりすぎない自動調整）
+            low_cut, high_cut, support_n = _compute_zone_thresholds(display_data)
+            display_data = {tk: _normalize_item(it, low_cut, high_cut) for tk, it in (display_data or {}).items()}
         
 
             # 統計（LEVEL別）
@@ -1560,7 +1696,9 @@ def show_main_page():
             try:
                 total_items = len(display_data)
                 watch_cnt = len([v for v in display_data.values() if _is_watch(v)])
-                st.caption(f"判定状況: 要監視 {watch_cnt}件 / 表示 {total_items}件")
+                low_cnt = len([v for v in display_data.values() if "下側ゾーン" in (v.get("tags") or [])])
+                high_cnt = len([v for v in display_data.values() if "上側ゾーン" in (v.get("tags") or [])])
+                st.caption(f"判定状況: 下値帯算出あり {support_n}件 / 要監視 {watch_cnt}件 / 下側 {low_cnt}件 / 上側 {high_cnt}件（基準: 下側≤{low_cut:.1f}%・上側≥{high_cut:.1f}%）")
             except Exception:
                 pass
     
@@ -1571,6 +1709,8 @@ def show_main_page():
             # 絞り込み（ボタンを減らして“フィルターパネル”に集約）
             if "flt_levels" not in st.session_state:
                 st.session_state["flt_levels"] = []  # 空=すべて
+            if "flt_zones" not in st.session_state:
+                st.session_state["flt_zones"] = []   # 空=すべて
             if "flt_watch_only" not in st.session_state:
                 st.session_state["flt_watch_only"] = False
             if "flt_query" not in st.session_state:
@@ -1582,21 +1722,27 @@ def show_main_page():
             def _apply_filters(items: dict) -> dict:
                 q = (st.session_state.get("flt_query") or "").strip().lower()
                 levels = st.session_state.get("flt_levels") or []
+                zones = st.session_state.get("flt_zones") or []
                 watch_only = bool(st.session_state.get("flt_watch_only"))
 
                 out = {}
-                for tk, it in (items or {}).items():
-                    # LEVEL（複数）
+                for tk, it in items.items():
+                    # LEVEL
                     if levels:
                         try:
-                            lv = str(int(it.get("level", 0)))
+                            if str(int(it.get("level", 0))) not in set(levels):
+                                continue
                         except Exception:
-                            lv = str(it.get("level", "0"))
-                        if lv not in levels:
+                            continue
+
+                    # ゾーン（タグ）
+                    if zones:
+                        tags = set(_norm_tag(x) for x in _tags_list(it.get("tags")))
+                        if not any(z in tags for z in zones):
                             continue
 
                     # 要監視のみ
-                    if watch_only and not _is_watch(it):
+                    if watch_only and not _is_watch_local(it):
                         continue
 
                     # 検索
@@ -1609,37 +1755,48 @@ def show_main_page():
                     out[tk] = it
                 return out
 
-            def _render_filter_ui():
-                st.markdown("#### 絞り込み")
-                st.session_state["flt_query"] = st.text_input(
-                    "検索（銘柄名・コード）",
-                    value=st.session_state.get("flt_query", ""),
-                    placeholder="例：7203 / トヨタ",
-                    label_visibility="visible",
-                )
+            # 上部ツールバー（フィルター）
+            tb1, tb2, tb3 = st.columns([1.2, 0.9, 2.9])
+            with tb1:
+                def _render_filter_ui():
+                    st.markdown("#### 絞り込み")
+                    st.session_state["flt_query"] = st.text_input(
+                        "検索（銘柄名・コード）",
+                        value=st.session_state.get("flt_query", ""),
+                        placeholder="例：7203 / トヨタ",
+                        label_visibility="visible",
+                    )
 
-                st.markdown("**LEVEL**")
-                st.session_state["flt_levels"] = st.multiselect(
-                    " ",
-                    options=["4", "3", "2", "1"],
-                    default=st.session_state.get("flt_levels") or [],
-                )
+                    st.markdown("**LEVEL**")
+                    st.session_state["flt_levels"] = st.multiselect(
+                        " ",
+                        options=["4", "3", "2", "1"],
+                        default=st.session_state.get("flt_levels") or [],
+                    )
 
-                st.session_state["flt_watch_only"] = st.toggle(
-                    "要監視のみ",
-                    value=bool(st.session_state.get("flt_watch_only")),
-                )
+                    st.markdown("**ゾーン**")
+                    st.session_state["flt_zones"] = st.multiselect(
+                        "  ",
+                        options=["下側ゾーン", "上側ゾーン"],
+                        default=st.session_state.get("flt_zones") or [],
+                    )
 
-            try:
-                with st.popover("🔎 フィルター"):
-                    _render_filter_ui()
-            except Exception:
-                with st.expander("🔎 フィルター", expanded=False):
-                    _render_filter_ui()
+                    st.session_state["flt_watch_only"] = st.toggle(
+                        "要監視のみ",
+                        value=bool(st.session_state.get("flt_watch_only")),
+                    )
+
+                try:
+                    with st.popover("🔎 フィルター"):
+                        _render_filter_ui()
+                except Exception:
+                    with st.expander("🔎 フィルター", expanded=False):
+                        _render_filter_ui()
 
             with tb2:
                 if st.button("🔄 リセット", use_container_width=True):
                     st.session_state["flt_levels"] = []
+                    st.session_state["flt_zones"] = []
                     st.session_state["flt_watch_only"] = False
                     st.session_state["flt_query"] = ""
                     st.rerun()
@@ -1648,11 +1805,10 @@ def show_main_page():
                 chips = []
                 if st.session_state.get("flt_levels"):
                     chips.append("LEVEL: " + ",".join(st.session_state["flt_levels"]))
+                if st.session_state.get("flt_zones"):
+                    chips.append(" / ".join(st.session_state["flt_zones"]))
                 if st.session_state.get("flt_watch_only"):
                     chips.append("要監視")
-                
-
-
                 if st.session_state.get("flt_query"):
                     chips.append("検索: " + st.session_state["flt_query"])
                 if chips:
@@ -1668,43 +1824,7 @@ def show_main_page():
             else:
                 st.info("該当する銘柄がありません")
             
-                        # ==========================
-            # 診断カート（右下固定・最大5件）
-            # ==========================
-            if "diag_cart" not in st.session_state:
-                st.session_state["diag_cart"] = []
-
-            st.markdown('<div class="diag-cart-wrap">', unsafe_allow_html=True)
-            st.markdown('<div class="diag-cart-title">🧺 診断カート（最大5件）</div>', unsafe_allow_html=True)
-            st.markdown('<div class="diag-cart-sub">あとで「ハゲタカ戦略室」に渡す銘柄コードを一時保管します。</div>', unsafe_allow_html=True)
-
-            if len(st.session_state["diag_cart"]) == 0:
-                st.markdown("まだ0件です。気になる銘柄の下にある「診断カートに追加」を押してください。")
-            else:
-                for tk in list(st.session_state["diag_cart"]):
-                    code = tk.replace(".T","")
-                    c1, c2 = st.columns([3,1])
-                    with c1:
-                        st.markdown(f'<div class="diag-cart-code">{code}</div>', unsafe_allow_html=True)
-                    with c2:
-                        if st.button("✕", key=f"cart_remove_{tk}"):
-                            st.session_state["diag_cart"] = [x for x in st.session_state["diag_cart"] if x != tk]
-                            st.rerun()
-
-                codes = [x.replace(".T","") for x in st.session_state["diag_cart"]]
-                st.code(",".join(codes), language="text")
-
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    if st.button("🗑 ぜんぶ外す", key="cart_clear", use_container_width=True):
-                        st.session_state["diag_cart"] = []
-                        st.rerun()
-                with col_b:
-                    st.button("➡ 戦略室へ", key="cart_go_future", use_container_width=True, disabled=True)
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-# メール送信
+            # メール送信
             email = st.session_state.get("email_address", "")
             app_password = st.session_state.get("app_password", "")
             
