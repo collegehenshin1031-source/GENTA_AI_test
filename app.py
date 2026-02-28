@@ -23,73 +23,6 @@ import base64
 import pandas as pd
 import numpy as np
 
-
-# ==========================================
-# 表示ラベル正規化（タグ/状態の表記揺れ吸収）
-# ==========================================
-def _norm_label(s) -> str:
-    """先頭記号や余計な空白を除去してラベルを正規化する。"""
-    if s is None:
-        return ""
-    t = str(s).strip()
-    # 先頭の装飾記号を除去（例：○要監視、✅要監視 など）
-    t = re.sub(r'^[\s○●◎◯・\-–—★☆▶▷→⇒✓✔✅☑︎【\[\(（]+', '', t).strip()
-    return t
-
-def _norm_tag(t) -> str:
-    """旧表記も含め、UIで扱うタグ名に正規化する。"""
-    t = _norm_label(t)
-    if not t:
-        return ""
-    # 価値判断に見える旧タグが混ざってもUI側ではゾーンに統一
-    if "下側" in t or "割安" in t:
-        return "下側ゾーン"
-    if "上側" in t or "割高" in t:
-        return "上側ゾーン"
-    if "要監視" in t:
-        return "要監視"
-    return t
-
-def _normalized_tags(tags) -> List[str]:
-    """タグ配列を正規化して重複を除去（順序保持）。"""
-    if not tags:
-        return []
-    if not isinstance(tags, list):
-        tags = [tags]
-    out = []
-    seen = set()
-    for x in tags:
-        nt = _norm_tag(x)
-        if nt and nt not in seen:
-            out.append(nt)
-            seen.add(nt)
-    return out
-
-def _is_watch(item: dict) -> bool:
-    """要監視判定（display_state/tagsの表記揺れを吸収）。"""
-    state = _norm_label(item.get("display_state", item.get("state", "")))
-    if "要監視" in state:
-        return True
-    for tg in _normalized_tags(item.get("tags") or []):
-        if tg == "要監視":
-            return True
-    return False
-
-def _zone_tag_from_fields(item: dict) -> Optional[str]:
-    """support_gap_pctがある場合は値からゾーンタグを再計算（タグ欠損への保険）。"""
-    try:
-        gap = item.get("support_gap_pct", None)
-        if gap is None:
-            return None
-        gap = float(gap)
-        if gap <= 5.0:
-            return "下側ゾーン"
-        if gap >= 20.0:
-            return "上側ゾーン"
-    except Exception:
-        return None
-    return None
-
 # チャート
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -128,6 +61,142 @@ MASTER_PASSWORD = "88888"
 
 # 免責文言
 DISCLAIMER_TEXT = "本ツールは市場データの可視化を目的とした補助ツールです。銘柄推奨・売買助言ではありません。最終判断は利用者ご自身で行ってください。"
+# ==========================================
+# 表記ゆれ吸収（フィルター/タグの安定化）
+# ==========================================
+STATE_HELP = {
+    "要監視": "変化が強めです。優先して確認します。",
+    "観測中": "変化の兆しがあります。数日単位で見守ります。",
+    "沈静": "今は大きな変化が見えません。記録だけ残します。",
+}
+
+def _norm_label(s) -> str:
+    """ラベルの表記ゆれを吸収（先頭記号/余計な空白/括弧など）"""
+    if s is None:
+        return ""
+    t = str(s).strip()
+    # 先頭の装飾記号を除去
+    t = re.sub(r'^[\s○●◎◯・\-–—★☆▶▷→⇒✓✔✅☑︎【\[\(（]+', '', t).strip()
+    return t
+
+def _norm_tag(t) -> str:
+    """タグの正規化（旧表現も吸収）"""
+    t = _norm_label(t)
+    if not t:
+        return ""
+    if "要監視" in t:
+        return "要監視"
+    if "下側" in t or "割安" in t:
+        return "下側ゾーン"
+    if "上側" in t or "割高" in t:
+        return "上側ゾーン"
+    return t
+
+def _tags_list(x) -> List[str]:
+    if x is None:
+        return []
+    if isinstance(x, list):
+        return [str(v) for v in x]
+    return [str(x)]
+
+def _compute_zone_thresholds(items: Dict[str, Dict], base_low: float = 5.0, base_high: float = 20.0):
+    """support_gap_pct からゾーン閾値を自動調整。
+    - 基本は固定（下側<=5%, 上側>=20%）
+    - 0件になりがちな時は、分布（p20/p80）を使って“出なさすぎ”だけ救済
+    """
+    gaps = []
+    for it in items.values():
+        g = it.get("support_gap_pct")
+        if g is None:
+            continue
+        try:
+            fg = float(g)
+            if np.isfinite(fg):
+                gaps.append(fg)
+        except Exception:
+            continue
+    if not gaps:
+        return base_low, base_high, 0
+
+    gaps_np = np.array(gaps, dtype=float)
+    p20 = float(np.percentile(gaps_np, 20))
+    p80 = float(np.percentile(gaps_np, 80))
+
+    low_cut = max(base_low, min(12.0, p20))
+    high_cut = min(base_high, max(12.0, p80))
+
+    # 逆転防止
+    if high_cut <= low_cut:
+        high_cut = min(base_high, max(12.0, low_cut + 5.0))
+
+    return float(low_cut), float(high_cut), len(gaps)
+
+def _normalize_item(it: Dict, low_cut: float, high_cut: float) -> Dict:
+    """表示/フィルター向けに、状態・タグ・ゾーンを安定化"""
+    d = dict(it) if isinstance(it, dict) else {}
+
+    raw_state = d.get("display_state", d.get("state", ""))
+    state_clean = _norm_label(state) or state
+    help_text = STATE_HELP.get(state_clean, "現在の状態を示します。")
+    if state_clean == "要監視":
+        state_html = f'<span title="{help_text}" style="background:#E8EAF6;color:#5C6BC0;padding:2px 10px;border-radius:999px;font-weight:800;">{state_clean}</span>'
+    else:
+        state_html = f'<span title="{help_text}">{state_clean}</span>'
+
+
+    tags_raw = _tags_list(d.get("tags"))
+    tags_norm = []
+    has_watch = ("要監視" in _norm_label(raw_state))
+    for tg in tags_raw:
+        nt = _norm_tag(tg)
+        if not nt:
+            continue
+        if nt == "要監視":
+            has_watch = True
+            continue  # 要監視は“状態”に統一するのでタグから除外
+        tags_norm.append(nt)
+
+    # 状態の整形
+    state = _norm_label(raw_state) or "観測中"
+    if has_watch:
+        state = "要監視"
+    d["display_state"] = state
+
+    # ゾーンは tags / support_gap_pct のどちらからでも付与できるようにする
+    has_zone = ("下側ゾーン" in tags_norm) or ("上側ゾーン" in tags_norm)
+    gap = d.get("support_gap_pct")
+    if (not has_zone) and (gap is not None):
+        try:
+            fg = float(gap)
+            if np.isfinite(fg):
+                if fg <= low_cut:
+                    tags_norm.append("下側ゾーン")
+                elif fg >= high_cut:
+                    tags_norm.append("上側ゾーン")
+        except Exception:
+            pass
+
+    # タグ重複排除（順序維持）
+    uniq = []
+    seen = set()
+    for t in tags_norm:
+        if t in seen:
+            continue
+        seen.add(t)
+        uniq.append(t)
+    d["tags"] = uniq
+    return d
+
+def _is_watch(item: dict) -> bool:
+    """要監視判定（状態/タグどちらでもOK。表記ゆれ吸収済みが前提）"""
+    state = _norm_label(item.get("display_state", item.get("state", "")))
+    if "要監視" in state:
+        return True
+    for tg in _tags_list(item.get("tags")):
+        if "要監視" in _norm_label(tg):
+            return True
+    return False
+
 
 # ==========================================
 # 日本語銘柄名辞書
@@ -1269,8 +1338,8 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
     flow_score = d.get("flow_score", 0)
     level = int(d.get("level", 0))
     ma_score = d.get("ma_score", None)
-    state = _norm_label(d.get("display_state", d.get("state", "観測中")))
-    tags = _normalized_tags(d.get("tags", []))
+    state = d.get("display_state", d.get("state", "観測中"))
+    tags = d.get("tags", [])
 
     # FlowScoreに基づくカードクラス（見た目の強弱）
     if flow_score >= FLOW_SCORE_HIGH:
@@ -1324,13 +1393,13 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
         </div>
         <div class="card-body">
             <div><span class="info-label">現在値</span><br><span class="info-value" style="color:#C41E3A;font-weight:600;">¥{d.get('price',0):,.0f}</span></div>
-            <div><span class="info-label">状態</span><br><span class="info-value">{state}</span></div>
+            <div><span class="info-label">状態</span><br><span class="info-value">{state_html}</span></div>
             <div><span class="info-label">時価総額</span><br><span class="info-value">{d.get('market_cap_oku',0):,}億円</span></div>
             <div>
                 <span class="info-label">出来高</span><br>
                 <span class="info-value">{d.get('vol_ratio', 0)}x</span>
                 <div style="margin-top:2px;font-size:0.72rem;color:#64748B;font-weight:700;">
-                    株数比 {format_volume_pct(d.get('volume_of_shares_pct'))}
+                    株数比 {format_volume_pct(d.get('volume_of_shares_pct'))}{'（推定）' if d.get('volume_of_shares_pct_is_estimated') else ''}
                 </div>
             </div>
         </div>
@@ -1589,6 +1658,11 @@ def show_main_page():
             else:
                 display_data = data.get("data", {})
 
+            # 表記ゆれ吸収 + ゾーン付与（0件を避けつつ“雑”になりすぎない自動調整）
+            low_cut, high_cut, support_n = _compute_zone_thresholds(display_data)
+            display_data = {tk: _normalize_item(it, low_cut, high_cut) for tk, it in (display_data or {}).items()}
+        
+
             # 統計（LEVEL別）
             lvl4 = len([v for v in display_data.values() if int(v.get("level", 0)) == 4])
             lvl3p = len([v for v in display_data.values() if int(v.get("level", 0)) >= 3])
@@ -1601,6 +1675,18 @@ def show_main_page():
                 st.markdown(f'<div class="stat-box"><div class="stat-value medium">{lvl3p}</div><div class="stat-label">LEVEL 3+</div></div>', unsafe_allow_html=True)
             with col3:
                 st.markdown(f'<div class="stat-box"><div class="stat-value total">{len(display_data)}</div><div class="stat-label">表示件数</div></div>', unsafe_allow_html=True)
+
+
+            # 判定状況（0件の切り分け用・小さく表示）
+            try:
+                total_items = len(display_data)
+                watch_cnt = len([v for v in display_data.values() if _is_watch(v)])
+                low_cnt = len([v for v in display_data.values() if "下側ゾーン" in (v.get("tags") or [])])
+                high_cnt = len([v for v in display_data.values() if "上側ゾーン" in (v.get("tags") or [])])
+                st.caption(f"判定状況: 下値帯算出あり {support_n}件 / 要監視 {watch_cnt}件 / 下側 {low_cnt}件 / 上側 {high_cnt}件（基準: 下側≤{low_cut:.1f}%・上側≥{high_cut:.1f}%）")
+            except Exception:
+                pass
+    
 
             st.markdown("")
 
@@ -1615,7 +1701,8 @@ def show_main_page():
             if "flt_query" not in st.session_state:
                 st.session_state["flt_query"] = ""
 
-            # ※要監視判定は上部の _is_watch() を使用（表記揺れ吸収）
+            def _is_watch_local(item: dict) -> bool:
+                return _is_watch(item)
 
             def _apply_filters(items: dict) -> dict:
                 q = (st.session_state.get("flt_query") or "").strip().lower()
@@ -1633,19 +1720,14 @@ def show_main_page():
                         except Exception:
                             continue
 
-                    # ゾーン（タグ）※表記揺れ吸収 + support_gap_pct からの再計算も考慮
+                    # ゾーン（タグ）
                     if zones:
-                        tags_list = _normalized_tags(it.get("tags") or [])
-                        # tagsに無いが数値だけあるケースの救済
-                        z_from_val = _zone_tag_from_fields(it)
-                        if z_from_val and z_from_val not in tags_list:
-                            tags_list.append(z_from_val)
-                        tags = set(tags_list)
+                        tags = set(_norm_tag(x) for x in _tags_list(it.get("tags")))
                         if not any(z in tags for z in zones):
                             continue
 
                     # 要監視のみ
-                    if watch_only and not _is_watch(it):
+                    if watch_only and not _is_watch_local(it):
                         continue
 
                     # 検索
