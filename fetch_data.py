@@ -202,9 +202,9 @@ def support_position_tag(latest_price: float, support_price: float | None) -> tu
         return None, None
     gap_pct = (latest_price / support_price - 1.0) * 100.0
 
-    if gap_pct <= 3.0:
+    if gap_pct <= 5.0:
         return "下側ゾーン", float(gap_pct)
-    if gap_pct >= 25.0:
+    if gap_pct >= 20.0:
         return "上側ゾーン", float(gap_pct)
     return None, float(gap_pct)
 
