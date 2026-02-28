@@ -568,248 +568,254 @@ def calculate_flow_state(df: pd.DataFrame, avg_volume: int = 0) -> dict:
     }
 
 
-def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 0, flow_data: dict = None, show_details: bool = False, show_reason: bool = False) -> go.Figure:
+def create_chart(
+    ticker: str,
+    name: str,
+    period: str = "6mo",
+    avg_volume: int = 0,
+    flow_data: dict = None,
+    show_details: bool = False,
+    show_reason: bool = False,
+) -> go.Figure:
     """
-    ローソク足チャート・出来高・価格帯別売買高を作成
-    TradingView風の明るいデザイン（抵抗線・支持線なし）
+    ローソク足＋（任意で）出来高＋右側VP（価格帯別売買高）を表示します。
+    初心者向けに、デフォルトは“シンプル表示”（出来高を隠す）です。
+
+    - 下値帯：support_price〜support_upper（青い帯）
+    - 根拠VPバー：show_reason=True のときのみ青強調
     """
     df = fetch_chart_data(ticker, period)
-    
-    if df.empty:
+    if df is None or df.empty:
         fig = go.Figure()
-        fig.add_annotation(text="データを取得できませんでした", 
-                          xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(text="データを取得できませんでした", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
         return fig
-    
-    # Flow状態を計算
+
+    # Flow状態（要監視ポイント）
     flow_state = calculate_flow_state(df, avg_volume)
     absorption_days = flow_state.get("absorption_days", [])
-    
-    # 出来高の色分け用データ
-    avg_vol = df['Volume'].tail(60).mean() if len(df) >= 60 else df['Volume'].mean()
-    # 価格帯別売買高を計算（期間ごと）
+
+    # VP（期間ごと）
     bins_map = {"1mo": 30, "3mo": 40, "6mo": 50, "1y": 60}
-    volume_profile = calculate_volume_profile(df, bins=bins_map.get(period, 40))
-    # 下値ライン（高出来高ゾーン下限）
+    bins = bins_map.get(period, 40)
+    volume_profile = calculate_volume_profile(df, bins=bins)
+
+    # 下値帯（直近伸び×安値付近 → フォールバックでPOC周辺帯）
     support_price, support_upper, highlight_range = compute_support_from_recent_growth(
         df,
-        bins=bins_map.get(period, 40),
+        bins=bins,
         recent_ratio=0.33,
         low_band_ratio=0.35,
     )
-
-    if support_price is None:
+    if support_price is None or support_upper is None:
         support_price, support_upper = compute_support_zone_from_profile(volume_profile, threshold_ratio=0.60)
         highlight_range = None
 
-    
-    # サブプロット作成
-# サブプロット作成（初心者向け：デフォルトは“シンプル表示”）
-if show_details:
-    fig = make_subplots(
-        rows=2,
-        cols=2,
-        column_widths=[0.88, 0.12],
-        row_heights=[0.65, 0.35],
-        specs=[[{"rowspan": 1}, {"rowspan": 1}], [{"rowspan": 1}, None]],
-        shared_xaxes=True,
-        vertical_spacing=0.05,
-        horizontal_spacing=0.02,
-    )
-else:
-    fig = make_subplots(
-        rows=1,
-        cols=2,
-        column_widths=[0.88, 0.12],
-        specs=[[{"rowspan": 1}, {"rowspan": 1}]],
-        shared_xaxes=True,
-        vertical_spacing=0.02,
-        horizontal_spacing=0.02,
-    )
+    # ===== サブプロット作成 =====
+    # show_details=True のときだけ下段（出来高）を出す
+    if show_details:
+        fig = make_subplots(
+            rows=2,
+            cols=2,
+            column_widths=[0.88, 0.12],
+            row_heights=[0.65, 0.35],
+            specs=[[{"rowspan": 1}, {"rowspan": 1}], [{"rowspan": 1}, None]],
+            shared_xaxes=True,
+            vertical_spacing=0.05,
+            horizontal_spacing=0.02,
+        )
+    else:
+        fig = make_subplots(
+            rows=1,
+            cols=2,
+            column_widths=[0.88, 0.12],
+            specs=[[{"rowspan": 1}, {"rowspan": 1}]],
+            shared_xaxes=True,
+            vertical_spacing=0.02,
+            horizontal_spacing=0.02,
+        )
 
-    # ===== ローソク足チャート =====
+    # ===== ローソク足 =====
     fig.add_trace(
         go.Candlestick(
             x=df.index,
-            open=df['Open'],
-            high=df['High'],
-            low=df['Low'],
-            close=df['Close'],
-            increasing_line_color='#26A69A',
-            decreasing_line_color='#EF5350',
-            increasing_fillcolor='#26A69A',
-            decreasing_fillcolor='#EF5350',
-            name='価格'
+            open=df["Open"],
+            high=df["High"],
+            low=df["Low"],
+            close=df["Close"],
+            increasing_line_color="#26A69A",
+            decreasing_line_color="#EF5350",
+            increasing_fillcolor="#26A69A",
+            decreasing_fillcolor="#EF5350",
+            name="価格",
         ),
-        row=1, col=1
+        row=1,
+        col=1,
     )
-# 下値帯（初心者向け：線ではなく“帯”で表示）
-if support_price is not None and support_upper is not None:
-    try:
-        y0 = float(min(support_price, support_upper))
-        y1 = float(max(support_price, support_upper))
-        mid = (y0 + y1) / 2.0
 
-        fig.add_hrect(
-            y0=y0,
-            y1=y1,
-            fillcolor="rgba(30, 136, 229, 0.14)",
-            line_width=0,
-            row=1,
-            col=1,
-        )
-        fig.add_hline(y=mid, line_dash="dot", line_width=1, line_color="#1E88E5", row=1, col=1)
+    # ===== 下値帯（帯＋中心線）=====
+    if support_price is not None and support_upper is not None:
+        try:
+            y0 = float(min(support_price, support_upper))
+            y1 = float(max(support_price, support_upper))
+            mid = (y0 + y1) / 2.0
 
-        period_label = {"1mo": "1ヶ月", "3mo": "3ヶ月", "6mo": "6ヶ月", "1y": "1年"}.get(period, period)
-        fig.add_annotation(
-            x=df.index[-1],
-            y=y1,
-            text=f"下値帯（{period_label}）",
-            showarrow=False,
-            xanchor="right",
-            yanchor="bottom",
-            font=dict(size=10, color="#1E88E5"),
-            row=1,
-            col=1,
-        )
-    except Exception:
-        pass
+            fig.add_hrect(
+                y0=y0,
+                y1=y1,
+                fillcolor="rgba(30, 136, 229, 0.14)",
+                line_width=0,
+                row=1,
+                col=1,
+            )
+            fig.add_hline(y=mid, line_dash="dot", line_width=1, line_color="#1E88E5", row=1, col=1)
 
-    # 「要監視ポイント」マーカー（出来高増 × 値動き小の条件一致日）
-    # ※売買の合図ではなく、状態変化の“記録”として表示
+            period_label = {"1mo": "1ヶ月", "3mo": "3ヶ月", "6mo": "6ヶ月", "1y": "1年"}.get(period, period)
+            fig.add_annotation(
+                x=df.index[-1],
+                y=y1,
+                text=f"下値帯（{period_label}）",
+                showarrow=False,
+                xanchor="right",
+                yanchor="bottom",
+                font=dict(size=10, color="#1E88E5"),
+                row=1,
+                col=1,
+            )
+        except Exception:
+            pass
+
+    # ===== 要監視ポイント（紫丸）=====
     if absorption_days:
         xs, ys = [], []
         for abs_day in absorption_days:
             if abs_day in df.index:
                 xs.append(abs_day)
-                ys.append(float(df.loc[abs_day, 'High']) * 1.01)
+                ys.append(float(df.loc[abs_day, "High"]) * 1.01)
         if xs:
             fig.add_trace(
                 go.Scatter(
                     x=xs,
                     y=ys,
-                    mode='markers',
-                    marker=dict(size=10, color='#7E57C2', symbol='circle'),
-                    name='要監視ポイント',
-                    hovertemplate='要監視ポイント<br>%{x|%Y-%m-%d}<br>出来高増 × 値動き小<extra></extra>'
+                    mode="markers",
+                    marker=dict(size=10, color="#7E57C2", symbol="circle"),
+                    name="要監視ポイント",
+                    hovertemplate="要監視ポイント<br>%{x|%Y-%m-%d}<br>取引増 × 動き小<extra></extra>",
                 ),
-                row=1, col=1
+                row=1,
+                col=1,
             )
-    
-    # ===== 出来高バー =====
+
+    # ===== 出来高（詳細表示のみ）=====
     if show_details:
+        avg_vol = df["Volume"].tail(60).mean() if len(df) >= 60 else df["Volume"].mean()
         colors = []
-        for idx, row in df.iterrows():
-            vol_ratio = row['Volume'] / avg_vol if avg_vol > 0 else 1
-            price_change = abs(row['Close'] / row['Open'] - 1) * 100 if row['Open'] > 0 else 0
-        
-            # FlowScore（出来高増 & 価格安定）
+        for _, r in df.iterrows():
+            vol_ratio = r["Volume"] / avg_vol if avg_vol > 0 else 1
+            price_change = abs(r["Close"] / r["Open"] - 1) * 100 if r["Open"] > 0 else 0
             if vol_ratio >= 1.5 and price_change <= 1.5:
-                colors.append('#7E57C2')  # 紫（FlowScore）
+                colors.append("#7E57C2")
             elif vol_ratio >= 1.5:
-                colors.append('#FF7043')  # オレンジ（出来高増）
+                colors.append("#FF7043")
             elif vol_ratio >= 1.2:
-                colors.append('#FFB74D')  # 薄いオレンジ
+                colors.append("#FFB74D")
             else:
-                colors.append('#90A4AE')  # グレー（通常）
-    
+                colors.append("#90A4AE")
+
         fig.add_trace(
             go.Bar(
                 x=df.index,
-                y=df['Volume'],
+                y=df["Volume"],
                 marker_color=colors,
                 marker_line_width=0,
-                name='出来高',
-                opacity=0.9
+                name="出来高",
+                opacity=0.9,
             ),
-            row=2, col=1
+            row=2,
+            col=1,
         )
-    
 
-    # ===== 価格帯別売買高 =====
-    if not volume_profile.empty:
-        max_vol = volume_profile['volume'].max()
+        # 出来高背景
+        fig.add_shape(
+            type="rect",
+            xref="paper",
+            yref="paper",
+            x0=0,
+            y0=0,
+            x1=0.88,
+            y1=0.35,
+            fillcolor="rgba(240, 244, 248, 0.8)",
+            line=dict(width=0),
+            layer="below",
+        )
+
+    # ===== 右：価格帯別売買高（VP）=====
+    if volume_profile is not None and not volume_profile.empty:
+        max_vol = float(volume_profile["volume"].max()) if float(volume_profile["volume"].max()) > 0 else 1.0
         vp_colors = []
+
         hl_low = hl_high = None
-        if 'highlight_range' in locals() and highlight_range:
+        if highlight_range:
             try:
-                hl_low = float(highlight_range.get('price_low'))
-                hl_high = float(highlight_range.get('price_high'))
+                hl_low = float(highlight_range.get("price_low"))
+                hl_high = float(highlight_range.get("price_high"))
             except Exception:
                 hl_low = hl_high = None
+
         for _, row in volume_profile.iterrows():
-            intensity = row['volume'] / max_vol if max_vol > 0 else 0
+            intensity = float(row["volume"]) / max_vol
             r = int(126 + (63 - 126) * intensity)
             g = int(87 + (81 - 87) * intensity)
             b = int(194 + (181 - 194) * intensity)
-            color = f'rgba({r}, {g}, {b}, 0.7)'
-            try:
-                if show_reason and hl_low is not None and hl_high is not None:
-                    if abs(float(row.get('price_low')) - hl_low) < 1e-9 and abs(float(row.get('price_high')) - hl_high) < 1e-9:
-                        color = 'rgba(30, 136, 229, 0.95)'
-            except Exception:
-                pass
+            color = f"rgba({r}, {g}, {b}, 0.7)"
+
+            if show_reason and hl_low is not None and hl_high is not None:
+                try:
+                    if abs(float(row["price_low"]) - hl_low) < 1e-9 and abs(float(row["price_high"]) - hl_high) < 1e-9:
+                        color = "rgba(30, 136, 229, 0.95)"
+                except Exception:
+                    pass
+
             vp_colors.append(color)
-        
+
         fig.add_trace(
             go.Bar(
-                y=volume_profile['price'],
-                x=volume_profile['volume'],
-                orientation='h',
+                y=volume_profile["price"],
+                x=volume_profile["volume"],
+                orientation="h",
                 marker_color=vp_colors,
                 marker_line_width=0,
-                name='価格帯別売買高'
+                name="価格帯別売買高",
             ),
-            row=1, col=2
+            row=1,
+            col=2,
         )
-    
-    # ===== レイアウト設定 =====
+
+    # ===== レイアウト =====
     fig.update_layout(
         title_text="",
-        height=500,
+        height=520 if show_details else 420,
         showlegend=False,
-        paper_bgcolor='#FFFFFF',
-        plot_bgcolor='#FAFAFA',
-        font=dict(family="Arial, sans-serif", size=11, color='#333333'),
-        margin=dict(l=10, r=10, t=30, b=30),
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FAFAFA",
+        font=dict(family="Arial, sans-serif", size=11, color="#333333"),
+        margin=dict(l=10, r=10, t=20, b=30),
         xaxis_rangeslider_visible=False,
     )
-    
-    # ローソク足エリア
-    fig.update_yaxes(
-        title_text="",
-        gridcolor='#E8E8E8',
-        showgrid=True,
-        zeroline=False,
-        side='right',
-        tickfont=dict(size=10),
-        row=1, col=1
-    )
-    fig.update_xaxes(
-        gridcolor='#E8E8E8',
-        showgrid=True,
-        zeroline=False,
-        showticklabels=False,
-        row=1, col=1
-    )
-    
-# 出来高エリア（詳細表示のときのみ）
-if show_details:
-    fig.update_yaxes(title_text="", gridcolor="#D0D0D0", showgrid=True, zeroline=False, tickfont=dict(size=9), row=2, col=1)
-    fig.update_xaxes(gridcolor="#D0D0D0", showgrid=True, zeroline=False, tickfont=dict(size=9), row=2, col=1)
 
-    fig.add_shape(
-        type="rect",
-        xref="paper",
-        yref="paper",
-        x0=0,
-        y0=0,
-        x1=0.88,
-        y1=0.35,
-        fillcolor="rgba(240, 244, 248, 0.8)",
-        line=dict(width=0),
-        layer="below",
-    )
+    # 左（ローソク足）
+    fig.update_yaxes(gridcolor="#E8E8E8", showgrid=True, zeroline=False, side="right", tickfont=dict(size=10), row=1, col=1)
+    fig.update_xaxes(gridcolor="#E8E8E8", showgrid=True, zeroline=False, showticklabels=show_details is False, tickfont=dict(size=9), row=1, col=1)
+
+    # 右（VP）はローソク足の価格軸と連動（ズレ防止）
+    fig.update_yaxes(matches="y", showticklabels=False, showgrid=False, row=1, col=2)
+    fig.update_xaxes(showticklabels=False, showgrid=False, row=1, col=2)
+
+    # 下段（出来高）
+    if show_details:
+        fig.update_yaxes(gridcolor="#D0D0D0", showgrid=True, zeroline=False, tickfont=dict(size=9), row=2, col=1)
+        fig.update_xaxes(gridcolor="#D0D0D0", showgrid=True, zeroline=False, tickfont=dict(size=9), row=2, col=1)
+
+    return fig
 
 
 def show_chart_modal(ticker: str, stock_info: dict):
