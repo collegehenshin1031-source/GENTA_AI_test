@@ -503,11 +503,11 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
     # 出来高の色分け用データ
     avg_vol = df['Volume'].tail(60).mean() if len(df) >= 60 else df['Volume'].mean()
     
-    # 価格帯別売買高を計算（期間ごと）
-    volume_profile = calculate_volume_profile(df)
-    # 下値ライン（期間内で最大出来高帯=POCの下限）
-    support_price = compute_poc_support_from_profile(volume_profile)
-    support_upper = None
+# 価格帯別売買高を計算（期間ごと）
+bins_map = {"1mo": 30, "3mo": 40, "6mo": 50, "1y": 60}
+volume_profile = calculate_volume_profile(df, bins=bins_map.get(period, 40))
+# 下値ライン（高出来高ゾーン下限）
+support_price, support_upper = compute_support_zone_from_profile(volume_profile, threshold_ratio=0.60)
 
     
     # サブプロット作成
@@ -515,7 +515,7 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         rows=2, cols=2,
         column_widths=[0.88, 0.12],
         row_heights=[0.65, 0.35],
-        specs=[[{"rowspan": 1}, {"rowspan": 2}],
+        specs=[[{"rowspan": 1}, {"rowspan": 1}],
                [{"rowspan": 1}, None]],
         shared_xaxes=True,
         vertical_spacing=0.05,
@@ -685,8 +685,8 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
         layer="below"
     )
     
-    # 価格帯別売買高エリア
-    fig.update_yaxes(showticklabels=False, showgrid=False, row=1, col=2)
+    # 価格帯別売買高エリア（右）：ローソク足の価格軸と連動
+    fig.update_yaxes(matches='y', showticklabels=False, showgrid=False, row=1, col=2)
     fig.update_xaxes(showticklabels=False, showgrid=False, row=1, col=2)
     
     return fig
