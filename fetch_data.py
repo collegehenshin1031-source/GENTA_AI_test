@@ -1486,6 +1486,7 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, d
                     api_name = None
                     pbr = None
                     shares_outstanding = None
+                    shares_outstanding_is_estimated = False
                     stock = None
                     try:
                         stock = yf.Ticker(ticker)
@@ -1495,10 +1496,21 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, d
                             market_cap_oku = round(float(mc) / 1e8, 0)
                         api_name = info.get("shortName") or info.get("longName")
                         pbr = info.get("priceToBook")
-                        # 総発行株数（可能なら）
+                        # 総発行株数（可能なら。取れない場合は推定で埋める）
+                        shares_outstanding_is_estimated = False
                         so = info.get("sharesOutstanding")
                         if so is not None:
                             shares_outstanding = int(so)
+                        else:
+                            # 推定: 時価総額 ÷ 株価（日本株はsharesOutstandingが欠損しやすい）
+                            mc_val = info.get("marketCap") or 0
+                            px_val = info.get("currentPrice") or latest_price
+                            if mc_val and px_val:
+                                try:
+                                    shares_outstanding = int(float(mc_val) / float(px_val))
+                                    shares_outstanding_is_estimated = True
+                                except Exception:
+                                    shares_outstanding = None
                     except Exception:
                         pass
 
@@ -1539,9 +1551,11 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, d
 
                     # 出来高が総発行株数に対して何%か（目安表示用）
                     volume_of_shares_pct = None
+                    volume_of_shares_pct_is_estimated = False
                     if shares_outstanding and shares_outstanding > 0:
                         try:
                             volume_of_shares_pct = (float(latest_volume) / float(shares_outstanding)) * 100.0
+                            volume_of_shares_pct_is_estimated = bool(shares_outstanding_is_estimated)
                         except Exception:
                             volume_of_shares_pct = None
 
@@ -1552,7 +1566,9 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, d
                         "avg_volume": avg_volume,
                         "vol_ratio": vol_ratio,
                         "shares_outstanding": int(shares_outstanding) if shares_outstanding else None,
+                        "shares_outstanding_is_estimated": bool(shares_outstanding_is_estimated) if shares_outstanding else None,
                         "volume_of_shares_pct": round(float(volume_of_shares_pct), 3) if volume_of_shares_pct is not None else None,
+                        "volume_of_shares_pct_is_estimated": bool(volume_of_shares_pct_is_estimated) if volume_of_shares_pct is not None else None,
                         "price_change_5d": price_change_5d,
                         "market_cap_oku": int(market_cap_oku) if market_cap_oku else 0,
                         "pbr": round(float(pbr), 2) if pbr else None,
