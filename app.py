@@ -136,7 +136,7 @@ def _normalize_item(it: Dict, low_cut: float, high_cut: float) -> Dict:
     d = dict(it) if isinstance(it, dict) else {}
 
     raw_state = d.get("display_state", d.get("state", ""))
-    state_clean = _norm_label(state) or state
+    state_clean = _norm_label(raw_state) or raw_state
     help_text = STATE_HELP.get(state_clean, "現在の状態を示します。")
     if state_clean == "要監視":
         state_html = f'<span title="{help_text}" style="background:#E8EAF6;color:#5C6BC0;padding:2px 10px;border-radius:999px;font-weight:800;">{state_clean}</span>'
