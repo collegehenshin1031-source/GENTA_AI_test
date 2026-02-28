@@ -1151,6 +1151,8 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
                 btn_type = "primary" if current_period == val else "secondary"
                 if st.button(lab, key=f"{period_key}_{val}", use_container_width=True, type=btn_type):
                     st.session_state[period_key] = val
+                    # ボタン押下の反映ズレを防ぐ（即時に選択状態を更新）
+                    st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
         period = st.session_state.get(period_key, "6mo")
@@ -1370,7 +1372,7 @@ def show_main_page():
             """, unsafe_allow_html=True)
 
             # フィルター切替
-            show_all = st.checkbox("全銘柄を表示（参考）", value=False)
+            show_all = st.checkbox("中型株以外も表示", value=False, help="通常は時価総額300〜2000億円の中型株のみを表示します。ONにすると対象外も含めて表示します。")
 
             if show_all:
                 display_data = data.get("all_data", {})
@@ -1403,6 +1405,7 @@ def show_main_page():
                     if st.button(label, key=f"level_btn_{value}", use_container_width=True, type=btn_type):
                         st.session_state["filter_level"] = value
                         selected_level = value
+                        st.rerun()
 
             filter_level = selected_level
 
@@ -1422,6 +1425,7 @@ def show_main_page():
                     if st.button(label, key=f"pos_btn_{value}", use_container_width=True, type=btn_type):
                         st.session_state["filter_pos"] = value
                         selected_pos = value
+                        st.rerun()
 
             if selected_pos != "すべて":
                 display_data = {
