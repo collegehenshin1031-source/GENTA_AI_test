@@ -97,19 +97,35 @@ def compute_support_zone_from_profile(vp: pd.DataFrame, threshold_ratio: float =
     return support, upper
 
 
+def compute_poc_support_from_profile(vp: pd.DataFrame):
+    """価格帯別売買高の最大出来高帯（POC）の下限を下値ラインとして返す。
+
+    ユーザー要望：期間ごと（1mo/3mo/6mo/1y）で、その期間内で最も出来高が厚い
+    価格帯の「下側」を下値ラインにする。
+    """
+    if vp is None or vp.empty or 'volume' not in vp.columns:
+        return None
+    try:
+        idx = int(vp['volume'].idxmax())
+        return float(vp.loc[idx, 'price_low'])
+    except Exception:
+        return None
+
+
 def support_position_tag(latest_price: float, support_price: float | None) -> tuple[str | None, float | None]:
     """下値ラインからの位置（％）を計算し、中立的なタグ名を返す。
-    - 下値付近: +3%以内
-    - 上方乖離: +25%以上
+    ※「割安/割高」の価値判断に見えないよう、価格の“位置”表現にしている。
+    - 下側ゾーン: +3%以内（下値ラインに近い）
+    - 上側ゾーン: +25%以上（下値ラインから大きく離れている）
     """
     if support_price is None or support_price <= 0:
         return None, None
     gap_pct = (latest_price / support_price - 1.0) * 100.0
 
     if gap_pct <= 3.0:
-        return "下値付近", float(gap_pct)
+        return "下側ゾーン", float(gap_pct)
     if gap_pct >= 25.0:
-        return "上方乖離", float(gap_pct)
+        return "上側ゾーン", float(gap_pct)
     return None, float(gap_pct)
 
 
@@ -1382,6 +1398,7 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, d
                     market_cap_oku = 0.0
                     api_name = None
                     pbr = None
+                    shares_outstanding = None
                     stock = None
                     try:
                         stock = yf.Ticker(ticker)
@@ -1391,6 +1408,10 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, d
                             market_cap_oku = round(float(mc) / 1e8, 0)
                         api_name = info.get("shortName") or info.get("longName")
                         pbr = info.get("priceToBook")
+                        # 総発行株数（可能なら）
+                        so = info.get("sharesOutstanding")
+                        if so is not None:
+                            shares_outstanding = int(so)
                     except Exception:
                         pass
 
@@ -1429,12 +1450,22 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, d
                         tags.append(f"継続{flow_streak_high}日")
                     tags.extend(event_tags)
 
+                    # 出来高が総発行株数に対して何%か（目安表示用）
+                    volume_of_shares_pct = None
+                    if shares_outstanding and shares_outstanding > 0:
+                        try:
+                            volume_of_shares_pct = (float(latest_volume) / float(shares_outstanding)) * 100.0
+                        except Exception:
+                            volume_of_shares_pct = None
+
                     result = {
                         "name": name,
                         "price": round(latest_price, 1),
                         "volume": latest_volume,
                         "avg_volume": avg_volume,
                         "vol_ratio": vol_ratio,
+                        "shares_outstanding": int(shares_outstanding) if shares_outstanding else None,
+                        "volume_of_shares_pct": round(float(volume_of_shares_pct), 3) if volume_of_shares_pct is not None else None,
                         "price_change_5d": price_change_5d,
                         "market_cap_oku": int(market_cap_oku) if market_cap_oku else 0,
                         "pbr": round(float(pbr), 2) if pbr else None,
