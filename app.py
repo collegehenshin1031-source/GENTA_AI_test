@@ -502,12 +502,11 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
     
     # 出来高の色分け用データ
     avg_vol = df['Volume'].tail(60).mean() if len(df) >= 60 else df['Volume'].mean()
-    
-# 価格帯別売買高を計算（期間ごと）
-bins_map = {"1mo": 30, "3mo": 40, "6mo": 50, "1y": 60}
-volume_profile = calculate_volume_profile(df, bins=bins_map.get(period, 40))
-# 下値ライン（高出来高ゾーン下限）
-support_price, support_upper = compute_support_zone_from_profile(volume_profile, threshold_ratio=0.60)
+    # 価格帯別売買高を計算（期間ごと）
+    bins_map = {"1mo": 30, "3mo": 40, "6mo": 50, "1y": 60}
+    volume_profile = calculate_volume_profile(df, bins=bins_map.get(period, 40))
+    # 下値ライン（高出来高ゾーン下限）
+    support_price, support_upper = compute_support_zone_from_profile(volume_profile, threshold_ratio=0.60)
 
     
     # サブプロット作成
