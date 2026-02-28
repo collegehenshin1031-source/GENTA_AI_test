@@ -430,6 +430,24 @@ def compute_support_zone_from_profile(vp: pd.DataFrame, threshold_ratio: float =
     return support, upper
 
 
+def compute_poc_support_from_profile(vp: pd.DataFrame):
+    """期間内で最も出来高が厚い価格帯（POC）の“下側”を下値ラインとして返す。
+
+    ユーザー要望：
+      - 1ヶ月表示→直近1ヶ月で最大出来高帯の下限
+      - 3ヶ月表示→直近3ヶ月で最大出来高帯の下限
+      - 6ヶ月表示→直近6ヶ月で最大出来高帯の下限
+      - 1年表示→直近1年で最大出来高帯の下限
+    """
+    if vp is None or vp.empty or 'volume' not in vp.columns:
+        return None
+    try:
+        idx = int(vp['volume'].idxmax())
+        return float(vp.loc[idx, 'price_low'])
+    except Exception:
+        return None
+
+
 def calculate_flow_state(df: pd.DataFrame, avg_volume: int = 0) -> dict:
     """
     チャート用のFlow状態を計算
@@ -485,10 +503,11 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
     # 出来高の色分け用データ
     avg_vol = df['Volume'].tail(60).mean() if len(df) >= 60 else df['Volume'].mean()
     
-    # 価格帯別売買高を計算
+    # 価格帯別売買高を計算（期間ごと）
     volume_profile = calculate_volume_profile(df)
-    # 下値ライン（直近半年の価格帯別売買高：高出来高ゾーン下限）
-    support_price, support_upper = compute_support_zone_from_profile(volume_profile, threshold_ratio=0.60)
+    # 下値ライン（期間内で最大出来高帯=POCの下限）
+    support_price = compute_poc_support_from_profile(volume_profile)
+    support_upper = None
 
     
     # サブプロット作成
@@ -523,19 +542,39 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
     if support_price is not None:
         try:
             fig.add_hline(y=support_price, line_dash='dot', line_width=1, line_color='#1E88E5', row=1, col=1)
-            fig.add_annotation(x=df.index[-1], y=support_price, text=f'下値ライン {support_price:,.0f}', showarrow=False, xanchor='right', yanchor='bottom', font=dict(size=10, color='#1E88E5'), row=1, col=1)
+            period_label = {"1mo":"1ヶ月","3mo":"3ヶ月","6mo":"6ヶ月","1y":"1年"}.get(period, period)
+            fig.add_annotation(
+                x=df.index[-1],
+                y=support_price,
+                text=f'下値ライン（{period_label}） {support_price:,.0f}',
+                showarrow=False,
+                xanchor='right',
+                yanchor='bottom',
+                font=dict(size=10, color='#1E88E5'),
+                row=1,
+                col=1
+            )
         except Exception:
             pass
     
-    # FlowScore日にマーカーを追加（○記号）
-    for abs_day in absorption_days:
-        if abs_day in df.index:
-            fig.add_annotation(
-                x=abs_day,
-                y=df.loc[abs_day, 'High'] * 1.01,
-                text="○",
-                showarrow=False,
-                font=dict(size=12, color="#7E57C2"),
+    # 「要監視ポイント」マーカー（出来高増 × 値動き小の条件一致日）
+    # ※売買の合図ではなく、状態変化の“記録”として表示
+    if absorption_days:
+        xs, ys = [], []
+        for abs_day in absorption_days:
+            if abs_day in df.index:
+                xs.append(abs_day)
+                ys.append(float(df.loc[abs_day, 'High']) * 1.01)
+        if xs:
+            fig.add_trace(
+                go.Scatter(
+                    x=xs,
+                    y=ys,
+                    mode='markers',
+                    marker=dict(size=10, color='#7E57C2', symbol='circle'),
+                    name='要監視ポイント',
+                    hovertemplate='要監視ポイント<br>%{x|%Y-%m-%d}<br>出来高増 × 値動き小<extra></extra>'
+                ),
                 row=1, col=1
             )
     
@@ -992,6 +1031,25 @@ def send_spike_alert(email: str, app_password: str, stocks: List[Dict], updated_
         return False
 
 
+def format_volume_pct(v) -> str:
+    """出来高/総発行株数（%）の表示用フォーマット。
+
+    - データがない場合は "-"
+    - 0.01%未満は "<0.01%" 表示
+    """
+    if v is None:
+        return "-"
+    try:
+        fv = float(v)
+        if not np.isfinite(fv):
+            return "-"
+        if fv < 0.01:
+            return "<0.01%"
+        return f"{fv:.2f}%"
+    except Exception:
+        return "-"
+
+
 
 # ==========================================
 # カード表示
@@ -1029,10 +1087,10 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
         # 要監視は目立たせる（グレー禁止）
         if tag == "要監視":
             tags_html += '<span style="background:#E8EAF6;color:#5C6BC0;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">要監視</span>'
-        elif tag == "下値付近":
-            tags_html += '<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">下値付近</span>'
-        elif tag == "上方乖離":
-            tags_html += '<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">上方乖離</span>'
+        elif tag == "下側ゾーン":
+            tags_html += '<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">下側ゾーン</span>'
+        elif tag == "上側ゾーン":
+            tags_html += '<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">上側ゾーン</span>'
         else:
             tags_html += f'<span style="background:#F3F4F6;color:#444;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;">{tag}</span>'
 
@@ -1058,7 +1116,13 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
             <div><span class="info-label">現在値</span><br><span class="info-value" style="color:#C41E3A;font-weight:600;">¥{d.get('price',0):,.0f}</span></div>
             <div><span class="info-label">状態</span><br><span class="info-value">{state}</span></div>
             <div><span class="info-label">時価総額</span><br><span class="info-value">{d.get('market_cap_oku',0):,}億円</span></div>
-            <div><span class="info-label">出来高倍率</span><br><span class="info-value">{d.get('vol_ratio', 0)}x</span></div>
+            <div>
+                <span class="info-label">出来高</span><br>
+                <span class="info-value">{d.get('vol_ratio', 0)}x</span>
+                <div style="margin-top:2px;font-size:0.72rem;color:#64748B;font-weight:700;">
+                    株数比 {format_volume_pct(d.get('volume_of_shares_pct'))}
+                </div>
+            </div>
         </div>
         <div style="padding:0 0.8rem 0.5rem;font-size:0.7rem;">{tags_html}</div>
     </div>
@@ -1097,6 +1161,8 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
             flow_details = d.get("flow_details", {})
             fig = create_chart(ticker, name, period, avg_volume, flow_details)
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+        st.caption("● 要監視ポイント：出来高増 × 値動き小 の条件が一致した日（売買の合図ではなく、状態の記録）")
 
         st.caption("※表示は市場データの可視化です。銘柄推奨・売買助言ではありません。")
 
@@ -1343,6 +1409,25 @@ def show_main_page():
             if filter_level != "すべて":
                 lv = int(filter_level)
                 display_data = {k: v for k, v in display_data.items() if int(v.get("level", 0)) == lv}
+
+            # 位置タグフィルター（下側ゾーン / 上側ゾーン）
+            st.markdown("", unsafe_allow_html=True)
+            pos_options = [("ALL", "すべて"), ("下側ゾーン", "下側ゾーン"), ("上側ゾーン", "上側ゾーン")]
+            selected_pos = st.session_state.get("filter_pos", "すべて")
+
+            cols2 = st.columns(len(pos_options))
+            for i, (label, value) in enumerate(pos_options):
+                with cols2[i]:
+                    btn_type = "primary" if selected_pos == value else "secondary"
+                    if st.button(label, key=f"pos_btn_{value}", use_container_width=True, type=btn_type):
+                        st.session_state["filter_pos"] = value
+                        selected_pos = value
+
+            if selected_pos != "すべて":
+                display_data = {
+                    k: v for k, v in display_data.items()
+                    if selected_pos in (v.get("tags") or [])
+                }
             
             # カード表示
             if display_data:
