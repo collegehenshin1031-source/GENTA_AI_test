@@ -678,6 +678,9 @@ def create_chart(ticker: str, name: str, period: str = "6mo", avg_volume: int = 
                 row=1,
                 col=1,
             )
+        except Exception:
+            # 下値帯描画で例外が出てもチャート全体は表示させる
+            pass
     
     # 「要監視ポイント」マーカー（出来高増 × 値動き小の条件一致日）
     # ※売買の合図ではなく、状態変化の“記録”として表示
