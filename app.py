@@ -1339,6 +1339,21 @@ def render_card(ticker: str, d: Dict, show_cap_badge: bool = False):
     level = int(d.get("level", 0))
     ma_score = d.get("ma_score", None)
     state = d.get("display_state", d.get("state", "観測中"))
+    # 状態表示（ツールチップ付き）
+    _state_clean = _norm_label(state) or str(state).strip()
+    _STATE_DESC = {
+        "沈静": "今は大きな変化が見えません。記録だけ残します。",
+        "観測中": "変化の兆しがあります。数日単位で見守ります。",
+        "要監視": "変化が強めです。優先して確認します。",
+    }
+    _tip = _STATE_DESC.get(_state_clean, "状態の目安です。")
+    _tip = _tip.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    _state_text = str(_state_clean).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    if _state_clean == "要監視":
+        state_html = f'<span title="{_tip}" style="color:#5C6BC0;font-weight:800;">{_state_text}</span>'
+    else:
+        state_html = f'<span title="{_tip}">{_state_text}</span>'
+
     tags = d.get("tags", [])
 
     # FlowScoreに基づくカードクラス（見た目の強弱）
