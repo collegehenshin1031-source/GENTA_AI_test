@@ -1715,6 +1715,71 @@ def show_disclaimer_page():
         st.rerun()
 
 
+
+# ==========================================
+# ログイン画面
+# ==========================================
+def show_login_page():
+    """ログイン画面（共通パスワード or 登録済みメールアドレス）"""
+
+    # 免責同意がまだなら先に表示
+    if not st.session_state.get("disclaimer_agreed", False):
+        show_disclaimer_page()
+        return
+
+    st.markdown("""
+    <div style="text-align:center;margin:1.2rem 0 0.8rem;">
+        <h2 style="margin:0;">🦅 ハゲタカSCOPE</h2>
+        <div style="color:#64748B;font-size:0.9rem;margin-top:0.25rem;">
+            市場データの状態を見える化する補助ツール（売買助言ではありません）
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    colL, colC, colR = st.columns([1.2, 1.6, 1.2])
+    with colC:
+        st.markdown("""
+        <div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:14px;padding:1rem 1.1rem;box-shadow:0 6px 18px rgba(15,23,42,0.06);">
+            <div style="font-weight:800;font-size:1rem;margin-bottom:0.35rem;">ログイン</div>
+            <div style="color:#64748B;font-size:0.85rem;line-height:1.6;margin-bottom:0.8rem;">
+                はじめての方は「共通パスワード」で入れます。<br>
+                通知設定を保存済みの方は「メールアドレス」で入れます。
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        tab1, tab2 = st.tabs(["共通パスワード", "メールアドレス"])
+
+        with tab1:
+            pw = st.text_input("共通パスワード", type="password", placeholder="例：88888")
+            if st.button("ログインする", use_container_width=True, key="login_master"):
+                if pw == MASTER_PASSWORD:
+                    st.session_state["logged_in"] = True
+                    st.session_state["login_type"] = "master"
+                    st.session_state["login_error"] = False
+                    st.rerun()
+                else:
+                    st.session_state["login_error"] = True
+
+        with tab2:
+            email = st.text_input("登録済みメールアドレス", placeholder="example@gmail.com")
+            if st.button("ログインする", use_container_width=True, key="login_email"):
+                if email and is_registered_email(email):
+                    st.session_state["email_address"] = email
+                    # 保存済みのパスワードを自動読込（存在する場合）
+                    pw2 = get_user_password(email)
+                    if pw2:
+                        st.session_state["app_password"] = pw2
+                    st.session_state["logged_in"] = True
+                    st.session_state["login_type"] = "email"
+                    st.session_state["login_error"] = False
+                    st.rerun()
+                else:
+                    st.session_state["login_error"] = True
+
+        if st.session_state.get("login_error"):
+            st.error("入力内容をご確認ください。共通パスワード、または登録済みメールアドレスが必要です。")
+
 # ==========================================
 # メイン処理
 # ==========================================
