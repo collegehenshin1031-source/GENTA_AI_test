@@ -7,17 +7,8 @@
 - 本通知は市場データの可視化に基づく候補の共有であり、銘柄推奨・売買助言ではない
 """
 import os
-
-# ==========================
-# テスト環境：通知を完全停止
-# ==========================
-print("TEST environment: send_notifications.py is disabled.")
-raise SystemExit(0)
-
-
 import json
 import smtplib
-import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -40,8 +31,8 @@ NOTIFY_FLOW_MIN = 70.0    # FlowScore 70以上
 # ==========================================
 def get_encryption_key() -> str:
     key = os.environ.get("ENCRYPTION_KEY")
-    if not key:
-        raise ValueError("ENCRYPTION_KEY environment variable is not set")
+    if not key or key == "false":
+        raise ValueError("ENCRYPTION_KEY environment variable is not set correctly.")
     return key
 
 
@@ -169,7 +160,7 @@ def create_email(data: dict, items: list[dict]) -> tuple[str, str] | tuple[None,
             "",
         ])
 
-    lines.append("アプリ（テスト）: https://hagetaka-scope-test.streamlit.app/")
+    lines.append("アプリ（本番環境）: https://hagetaka-scope-test.streamlit.app/")
     return subject, "\n".join(lines)
 
 
