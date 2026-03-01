@@ -1,4 +1,4 @@
-name: Daily Update (TEST - No Email)
+name: Daily Update & Notification
 
 on:
   schedule:
@@ -31,9 +31,6 @@ jobs:
       - name: Fetch volume data
         run: python fetch_data.py
 
-      - name: Notifications disabled in TEST
-        run: echo "TEST environment: email notifications are disabled."
-
       - name: Commit and push changes
         run: |
           git config --local user.email "action@github.com"
@@ -43,5 +40,19 @@ jobs:
             echo "No changes to commit."
             exit 0
           fi
-          git commit -m "📊 Update volume data (TEST) $(date +'%Y-%m-%d %H:%M')"
+          git commit -m "📊 Update volume data $(date +'%Y-%m-%d %H:%M')"
           git push
+
+      - name: Send Email Notifications (Switchable)
+        env:
+          ENABLE_EMAIL: "false" # ★本番稼働させる時にここを "true" に書き換えます★
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          GSHEETS_CREDENTIALS: ${{ secrets.GSHEETS_CREDENTIALS }}
+          SPREADSHEET_URL: ${{ secrets.SPREADSHEET_URL }}
+        run: |
+          if [ "$ENABLE_EMAIL" = "true" ]; then
+            echo "Starting email notification process..."
+            python send_notifications.py
+          else
+            echo "Email notification is currently DISABLED. Set ENABLE_EMAIL to true to activate."
+          fi
