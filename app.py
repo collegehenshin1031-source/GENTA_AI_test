@@ -4,7 +4,7 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - 需給スコアによるM&A候補検知
 - 通知設定の登録・変更・削除（Google Sheets永続化）
 - 診断カート機能（最大5件、戦略室連携用）
-- 免責同意ボタンの有効化アニメーション（赤く発光）
+- ログイン＝免責同意のシームレス化（UX改善）
 """
 
 import json
@@ -42,7 +42,7 @@ FLOW_SCORE_MEDIUM = 40
 LEVEL_COLORS = {4: "#C41E3A", 3: "#FF9800", 2: "#FFC107", 1: "#5C6BC0", 0: "#9E9E9E"}
 
 MASTER_PASSWORD = "88888"
-DISCLAIMER_TEXT = "本ツールは市場データの可視化を目的とした補助ツールです。銘柄推奨・売買助言ではありません。最終判断は利用者ご自身で行ってください。"
+DISCLAIMER_TEXT = "本ツールは市場データの可視化を目的とした補助ツールです。<br>銘柄推奨・売買助言ではありません。最終判断は利用者ご自身で行ってください。"
 
 # ==========================================
 # UI設定・CSS
@@ -117,24 +117,16 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
 
-/* =======================================
-   免責同意ボタンの発光アニメーション
-   ======================================= */
-@keyframes redPulse {
-    0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.8); }
-    70% { box-shadow: 0 0 0 15px rgba(220, 38, 38, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
-}
-.disclaimer-btn-wrapper button[kind="primary"]:not([disabled]) {
-    background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%) !important;
-    color: #FFFFFF !important;
-    border: none !important;
-    animation: redPulse 1.5s infinite !important;
-    transform: scale(1.02);
-    transition: transform 0.2s ease;
-}
-.disclaimer-btn-wrapper button[kind="primary"]:not([disabled]):hover {
-    transform: scale(1.04);
+/* 免責事項ボックスのスタイル */
+.disclaimer-box {
+    background: #FFFBF0;
+    border-left: 4px solid #F59E0B;
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    margin: 1.5rem 0 1rem 0;
+    font-size: 0.75rem;
+    color: #475569;
+    line-height: 1.5;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -401,15 +393,28 @@ def show_login_page():
             
         tab1, tab2 = st.tabs(["🔑 アプリを利用する", "⚙️ 通知設定の呼び出し"])
         
+        # --- アプリを利用する（共通パスワード） ---
         with tab1:
             st.markdown("""
-            <div style="text-align:center; padding: 1rem 0;">
-                <p style="color:#666; font-size:0.85rem; margin-bottom: 1rem;">共通パスワードを入力して候補一覧を閲覧します</p>
+            <div style="text-align:center; padding: 1rem 0 0 0;">
+                <p style="color:#666; font-size:0.85rem; margin-bottom: 0.5rem;">共通パスワードを入力して候補一覧を閲覧します</p>
             </div>
             """, unsafe_allow_html=True)
             
             pw_input = st.text_input("パスワード", placeholder="共通パスワードを入力", type="password", key="login_pw")
-            if st.button("ログイン", use_container_width=True, type="primary"):
+            
+            # 免責事項のシームレス表示
+            st.markdown(f"""
+            <div class="disclaimer-box">
+                <strong>⚠️ 免責事項</strong><br>
+                {DISCLAIMER_TEXT}
+            </div>
+            <div style="text-align:center; margin-bottom: 10px;">
+                <span style="font-size: 0.8rem; font-weight: bold; color: #DC2626;">※ログインすることで上記に同意したものとみなします。</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if st.button("ログインして利用開始", use_container_width=True, type="primary"):
                 if pw_input == MASTER_PASSWORD:
                     st.cache_data.clear()
                     st.session_state.update({"logged_in": True, "login_error": False, "login_type": "master"})
@@ -418,6 +423,7 @@ def show_login_page():
                     st.session_state["login_error"] = True
                     st.rerun()
                     
+        # --- 登録情報の呼び出し（メアド） ---
         with tab2:
             st.markdown("""
             <div style="text-align:center; padding: 1rem 0;">
@@ -426,15 +432,22 @@ def show_login_page():
             """, unsafe_allow_html=True)
             
             email_input = st.text_input("登録済みメールアドレス", placeholder="example@gmail.com", key="login_email")
-            if st.button("設定を呼び出す", use_container_width=True):
+            
+            st.markdown(f"""
+            <div class="disclaimer-box" style="margin-top:0.5rem;">
+                <strong>⚠️ 免責事項</strong><br>
+                {DISCLAIMER_TEXT}
+            </div>
+            """, unsafe_allow_html=True)
+
+            if st.button("設定を呼び出す（同意して進む）", use_container_width=True):
                 try:
                     settings = load_settings_by_email(email_input)
                     if settings:
                         st.cache_data.clear()
                         st.session_state.update({
                             "logged_in": True, "login_error": False, "login_type": "email", 
-                            "email_address": settings["email"], "app_password": decrypt_password(settings["encrypted_password"]),
-                            "disclaimer_agreed": True 
+                            "email_address": settings["email"], "app_password": decrypt_password(settings["encrypted_password"])
                         })
                         st.rerun()
                     else:
@@ -444,25 +457,8 @@ def show_login_page():
                     st.session_state["login_error"] = True
                     st.rerun()
 
-def show_disclaimer_page():
-    st.markdown("<div style='text-align: center; margin: 2rem 0;'><h2>🦅 HAGETAKA SCOPE</h2></div>", unsafe_allow_html=True)
-    st.warning(DISCLAIMER_TEXT)
-    
-    agree1 = st.checkbox("本ツールは投資助言ではないことを理解しました")
-    agree2 = st.checkbox("最終判断は自己責任で行うことを理解しました")
-    
-    # ここに発光用CSSクラスのラッパーを追加
-    st.markdown('<div class="disclaimer-btn-wrapper">', unsafe_allow_html=True)
-    if st.button("同意して利用開始", use_container_width=True, type="primary", disabled=not (agree1 and agree2)):
-        st.session_state["disclaimer_agreed"] = True
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
 def show_main_page():
-    if not st.session_state.get("disclaimer_agreed"):
-        show_disclaimer_page()
-        return
-    
     logo_base64 = get_logo_base64()
     if logo_base64:
         st.markdown(f'<div style="text-align: center; margin-bottom: 0.5rem;"><img src="data:image/png;base64,{logo_base64}" class="logo-img" style="max-width: 320px; width: 80%;"></div>', unsafe_allow_html=True)
