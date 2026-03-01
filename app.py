@@ -4,6 +4,7 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - 需給スコアによるM&A候補検知
 - 通知設定の登録・変更・削除（Google Sheets永続化）
 - 診断カート機能（最大5件、戦略室連携用）
+- 免責同意ボタンの有効化アニメーション（赤く発光）
 """
 
 import json
@@ -115,6 +116,26 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .stat-label{ color:#64748B; font-size:.78rem; font-weight:700; margin-top:.25rem; }
 
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
+
+/* =======================================
+   免責同意ボタンの発光アニメーション
+   ======================================= */
+@keyframes redPulse {
+    0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.8); }
+    70% { box-shadow: 0 0 0 15px rgba(220, 38, 38, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+.disclaimer-btn-wrapper button[kind="primary"]:not([disabled]) {
+    background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%) !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    animation: redPulse 1.5s infinite !important;
+    transform: scale(1.02);
+    transition: transform 0.2s ease;
+}
+.disclaimer-btn-wrapper button[kind="primary"]:not([disabled]):hover {
+    transform: scale(1.04);
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -410,7 +431,6 @@ def show_login_page():
                     settings = load_settings_by_email(email_input)
                     if settings:
                         st.cache_data.clear()
-                        # メアドでのログイン時は免責事項をスキップ
                         st.session_state.update({
                             "logged_in": True, "login_error": False, "login_type": "email", 
                             "email_address": settings["email"], "app_password": decrypt_password(settings["encrypted_password"]),
@@ -427,9 +447,16 @@ def show_login_page():
 def show_disclaimer_page():
     st.markdown("<div style='text-align: center; margin: 2rem 0;'><h2>🦅 HAGETAKA SCOPE</h2></div>", unsafe_allow_html=True)
     st.warning(DISCLAIMER_TEXT)
-    if st.button("同意して利用開始", use_container_width=True, disabled=not (st.checkbox("本ツールは投資助言ではないことを理解しました") and st.checkbox("最終判断は自己責任で行うことを理解しました"))):
+    
+    agree1 = st.checkbox("本ツールは投資助言ではないことを理解しました")
+    agree2 = st.checkbox("最終判断は自己責任で行うことを理解しました")
+    
+    # ここに発光用CSSクラスのラッパーを追加
+    st.markdown('<div class="disclaimer-btn-wrapper">', unsafe_allow_html=True)
+    if st.button("同意して利用開始", use_container_width=True, type="primary", disabled=not (agree1 and agree2)):
         st.session_state["disclaimer_agreed"] = True
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def show_main_page():
     if not st.session_state.get("disclaimer_agreed"):
