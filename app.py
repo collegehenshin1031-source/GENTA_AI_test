@@ -1,20 +1,16 @@
 """
 HAGETAKA SCOPE - M&A候補検知ツール
-- ログイン画面のスタイリッシュ化
-- 需給スコアによるM&A候補検知
 - ハゲタカ診断エンジン（AI判定・チャート）の完全統合
 - 戦略室のタブ移動＆スマホ対応カレンダー
 - 金融庁コンプライアンス対応（文言校正）
 - カート操作の即時反映（コールバック化）
-- カートボタンのUI強化（色分け・巨大化）
-- スマホ表示時のタブ崩れ防止＆スワイプ対応
 - 安全なフローティング・ジャンプボタン（カート状態連動）
 - PC版の銘柄コード入力欄の余白最適化
 - フィルターのデフォルト設定（すべて・要監視OFF）
-- 銘柄カードの「商い熱量」を削除してスッキリ化
-- 【改善】ダークモード時の文字見えなくなるバグ対応（文字色固定）
-- 【改善】ハゲタカ診断の複数結果をカード（枠線）で囲んで区別化
-- 【改善】M&A候補の並び順を LEVEL 1 が上になる昇順に変更
+- M&A候補の並び順（LEVEL昇順、需給スコア降順）
+- 【修正】expand_more等のアイコン文字化けバグ解消
+- 【修正】ダークモード/ライトモード完全自動対応（CSS変数化）
+- 【改善】ハゲタカ診断結果の独立カード（枠線）化
 """
 
 import json
@@ -92,43 +88,35 @@ header { visibility: hidden !important; display: none !important; }
 #MainMenu, footer, .stDeployButton { display: none !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
-/* 🌟 ダークモード対策：全体の文字色を強制的に黒系（#0F172A）に固定する */
-html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, li {
-    color: #0F172A !important;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
-}
+/* 全体のベースデザイン（安全なフォント適用） */
+.stApp { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 
-/* 白文字にすべきところは個別に白で上書き（重要） */
-.level-badge, .ratio-badge.high, button[data-testid="baseButton-primary"], .floating-jump-btn, .stTabs [data-baseweb="tab"][aria-selected="true"] p, .cart-popover-container [data-testid="stPopover"] > button, .disclaimer-btn-wrapper button {
-    color: #FFFFFF !important;
-}
-.ratio-badge.medium { color: #0F172A !important; }
-
-/* 全体のベースデザイン */
+/* テーマ追従の背景グラデーション（透明度を使ってテーマ色に馴染ませる） */
 div[data-testid="stAppViewContainer"]{
-  background: radial-gradient(1200px 600px at 10% 0%, rgba(92,107,192,0.10), transparent 60%),
-              radial-gradient(900px 450px at 95% 10%, rgba(196,30,58,0.10), transparent 55%),
-              linear-gradient(180deg, #FFFFFF 0%, #FAFBFF 60%, #FFFFFF 100%) !important;
+  background-color: var(--background-color);
+  background-image: radial-gradient(1200px 600px at 10% 0%, rgba(92,107,192,0.08), transparent 60%),
+                    radial-gradient(900px 450px at 95% 10%, rgba(196,30,58,0.08), transparent 55%) !important;
 }
 .main .block-container{ max-width: 1080px !important; padding: 2.0rem 1.2rem 3.2rem 1.2rem !important; }
 h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 800 !important; margin-bottom: .2rem !important; }
-.subtitle{ text-align:center; color:#64748B !important; font-size:.85rem; margin-bottom: 1.1rem; }
+.subtitle{ text-align:center; color: var(--text-color); opacity: 0.7; font-size:.85rem; margin-bottom: 1.1rem; }
 
 /* ロゴ背景透過マジック */
 .logo-img { mix-blend-mode: multiply; }
 
-/* Tabs (スマホ対応の安定化・スワイプ対応) */
+/* =======================================
+   Tabs (スマホ対応の安定化・スワイプ対応)
+   ======================================= */
 .stTabs [data-baseweb="tab-list"] {
   display: flex !important;
   flex-wrap: nowrap !important;
   overflow-x: auto !important;
   -webkit-overflow-scrolling: touch !important;
   justify-content: flex-start !important;
-  background: rgba(255,255,255,0.85) !important;
-  backdrop-filter: blur(8px);
+  background-color: var(--secondary-background-color) !important;
+  border: 1px solid rgba(128,128,128,0.15) !important;
   padding: 0.35rem !important;
   border-radius: 14px !important;
-  border: 1px solid rgba(15,23,42,0.08) !important;
   box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
   margin-bottom: 1.0rem !important;
   gap: 0.3rem !important;
@@ -141,140 +129,138 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
   padding: 0.6rem 0.8rem !important;
   border-radius: 10px !important;
   font-weight: 700 !important;
-  color: #475569 !important;
+  color: var(--text-color) !important;
+  opacity: 0.7;
   justify-content: center !important;
 }
 .stTabs [data-baseweb="tab"] p {
   white-space: nowrap !important;
   margin: 0 !important;
 }
-.stTabs [data-baseweb="tab"][aria-selected="true"] { background: linear-gradient(135deg, #0F172A 0%, #334155 100%) !important; }
+.stTabs [data-baseweb="tab"][aria-selected="true"] { 
+    background: linear-gradient(135deg, #0F172A 0%, #334155 100%) !important; 
+    opacity: 1.0;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] p { color: #FFFFFF !important; }
 
 /* =======================================
-   Cards (スマホベース)
+   Cards (スマホベース＆テーマ対応)
    ======================================= */
 .spike-card{
-  position: relative; background: rgba(255,255,255,0.92) !important; backdrop-filter: blur(8px);
-  border-radius: 16px; padding: 1rem; margin-bottom: .75rem; border: 1px solid rgba(15,23,42,0.12);
-  box-shadow: 0 14px 44px rgba(15,23,42,0.10);
+  position: relative; 
+  background-color: var(--secondary-background-color) !important; 
+  border-radius: 16px; padding: 1rem; margin-bottom: .75rem; 
+  border: 1px solid rgba(128,128,128,0.2) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
 }
 .spike-card::before{
   content:""; position:absolute; left:0; top:10px; bottom:10px; width:4px;
-  border-radius: 999px; background: rgba(15,23,42,0.10);
+  border-radius: 999px; background: rgba(128,128,128,0.3);
 }
-.spike-card.high{ border-color: rgba(196,30,58,0.32); box-shadow: 0 18px 52px rgba(196,30,58,0.14); background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,245,247,0.92) 100%) !important; }
+.spike-card.high{ border-color: rgba(196,30,58,0.4) !important; box-shadow: 0 10px 30px rgba(196,30,58,0.15); }
 .spike-card.high::before{ background: linear-gradient(180deg, #C41E3A 0%, #E63946 100%); }
-.spike-card.medium{ border-color: rgba(255,152,0,0.32); box-shadow: 0 18px 52px rgba(255,152,0,0.12); background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,250,242,0.92) 100%) !important; }
+.spike-card.medium{ border-color: rgba(255,152,0,0.4) !important; box-shadow: 0 10px 30px rgba(255,152,0,0.15); }
 .spike-card.medium::before{ background: linear-gradient(180deg, #FF9800 0%, #FFC107 100%); }
 
 .card-header{ display:flex; justify-content:space-between; align-items:center; gap:.7rem; margin-bottom: .55rem; }
-.ticker-name a{ font-weight: 800; text-decoration:none; font-size: 1.1rem; }
+.ticker-name a{ font-weight: 800; color: var(--text-color) !important; text-decoration:none; font-size: 1.1rem; }
 .ticker-name a:hover{ text-decoration: underline; }
-.ticker-jp-name { font-size: 0.75rem; color: #888 !important; margin-left: 6px; }
+.ticker-jp-name { font-size: 0.75rem; color: var(--text-color) !important; opacity: 0.6; margin-left: 6px; }
 
 .ratio-badge{
   min-width: 70px; text-align:center; padding: .2rem .6rem; border-radius: 8px; font-weight: 800;
-  border: 1px solid rgba(15,23,42,0.10); background: rgba(255,255,255,0.8); cursor: help;
+  border: 1px solid rgba(128,128,128,0.2); background-color: var(--background-color); cursor: help;
 }
-.ratio-badge.high{ border-color: rgba(196,30,58,0.25); background: linear-gradient(135deg, #C41E3A 0%, #E63946 100%); }
-.ratio-badge.medium{ border-color: rgba(255,152,0,0.25); background: linear-gradient(135deg, rgba(255,152,0,0.18) 0%, rgba(255,193,7,0.18) 100%); }
+.ratio-badge.high{ color:#FFFFFF !important; border-color: rgba(196,30,58,0.4); background: linear-gradient(135deg, #C41E3A 0%, #E63946 100%); }
+.ratio-badge.medium{ color: var(--text-color) !important; border-color: rgba(255,152,0,0.4); background: rgba(255,152,0,0.15); }
 .score-val{ font-size: 1.0rem; line-height: 1.0; }
 .score-label{ font-size: 0.55rem; line-height: 1.0; display: block; margin-bottom: 2px; opacity: 0.8;}
 
-.level-badge { padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; }
+.level-badge { padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; color: white !important; }
 
 .card-body{ display:grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; margin-top: .2rem; }
-.info-label{ font-size: .72rem; color:#64748B !important; font-weight: 700; letter-spacing: .02em; }
-.info-value{ font-size: .93rem; font-weight: 700; }
-.price-val { color: #C41E3A !important; font-weight: 600; }
+.info-label{ font-size: .72rem; color: var(--text-color) !important; opacity: 0.7; font-weight: 700; letter-spacing: .02em; }
+.info-value{ font-size: .93rem; color: var(--text-color) !important; font-weight: 700; }
+.price-val { color: #E63946 !important; font-weight: 800; }
 
 .tag-container { padding: 0 0.8rem 0.5rem; font-size: 0.7rem; }
-.tag-watch { background: #E8EAF6; color: #5C6BC0 !important; padding: 2px 8px; border-radius: 999px; margin-right: 6px; font-weight: 700; display: inline-block; margin-bottom: 4px; }
-.tag-normal { background: #F3F4F6; color: #444 !important; padding: 2px 8px; border-radius: 999px; margin-right: 6px; display: inline-block; margin-bottom: 4px; }
+.tag-watch { background: rgba(92,107,192,0.2); color: #5C6BC0 !important; padding: 2px 8px; border-radius: 999px; margin-right: 6px; font-weight: 700; display: inline-block; margin-bottom: 4px; }
+.tag-normal { background: var(--background-color) !important; color: var(--text-color) !important; border: 1px solid rgba(128,128,128,0.3); padding: 2px 8px; border-radius: 999px; margin-right: 6px; display: inline-block; margin-bottom: 4px; }
 
-/* =======================================
-   💻 PC版の銘柄カード最適化（文字サイズ拡大・間延び防止）
-   ======================================= */
+/* 💻 PC版の銘柄カード最適化 */
 @media (min-width: 768px) {
     .spike-card { padding: 1.5rem 2.0rem 0.5rem !important; margin-bottom: 1.0rem !important; }
     .ticker-name a { font-size: 1.6rem !important; }
     .ticker-jp-name { font-size: 1.1rem !important; margin-left: 12px !important; }
-    
-    .card-body { 
-        display: flex !important; 
-        gap: 5rem !important; 
-        margin-top: 1.0rem !important; 
-    }
+    .card-body { display: flex !important; gap: 5rem !important; margin-top: 1.0rem !important; }
     .info-label { font-size: 0.9rem !important; }
     .info-value { font-size: 1.3rem !important; }
     .price-val { font-size: 1.4rem !important; }
-    
     .level-badge { font-size: 1.0rem !important; padding: 5px 14px !important; }
     .score-label { font-size: 0.75rem !important; }
     .score-val { font-size: 1.4rem !important; }
     .ratio-badge { padding: 0.4rem 1.0rem !important; }
-    
     .tag-container { padding: 1.0rem 0 0.5rem !important; }
     .tag-watch, .tag-normal { font-size: 0.85rem !important; padding: 4px 12px !important; margin-right: 8px !important; }
 }
 
-/* 🌟 ハゲタカ診断：銘柄ごとの枠組みカードスタイル */
+/* =======================================
+   ハゲタカ診断 個別カード化スタイル
+   ======================================= */
 .diagnosis-card {
-    background-color: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(15, 23, 42, 0.15);
+    background-color: var(--secondary-background-color);
+    border: 1px solid rgba(128, 128, 128, 0.2);
     border-radius: 16px;
     padding: 1.5rem;
     margin-bottom: 2rem;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
 }
 
-.stat-box{ background: rgba(255,255,255,0.88); border: 1px solid rgba(15,23,42,0.08); border-radius: 14px; padding: .9rem .9rem; box-shadow: 0 10px 30px rgba(15,23,42,0.06); text-align:center; }
-.stat-value{ font-size: 1.55rem; font-weight: 900; line-height: 1.1; }
-.stat-value.high{ color:#C41E3A !important; }
-.stat-value.medium{ color:#FF9800 !important; }
-.stat-value.total{ }
-.stat-label{ color:#64748B !important; font-size:.78rem; font-weight:700; margin-top:.25rem; }
-
-/* ボタンの共通角丸 */
+/* =======================================
+   ボタンとその他のコンポーネント
+   ======================================= */
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
 
-/* 🛒 カートに入れる等の青系メインボタン（Primary） */
 div.stButton > button[data-testid="baseButton-primary"] {
     background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%) !important;
+    color: white !important;
     border: none !important;
     box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3) !important;
 }
 
-/* 🗑️ カートをリセット 専用の控えめでお洒落なボタンスタイル */
 .reset-btn-container { margin-bottom: -0.5rem; }
 .reset-btn-container button {
-    background: linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 100%) !important;
+    background: transparent !important;
     color: #E11D48 !important;
-    border: 1px solid #FECDD3 !important;
+    border: 1px solid rgba(225, 29, 72, 0.4) !important;
     font-weight: 800 !important;
     border-radius: 12px !important;
-    box-shadow: 0 4px 10px rgba(225, 29, 72, 0.1) !important;
     transition: all 0.2s ease !important;
 }
 .reset-btn-container button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 15px rgba(225, 29, 72, 0.15) !important;
-    background: linear-gradient(135deg, #FFE4E6 0%, #FECDD3 100%) !important;
+    background: rgba(225, 29, 72, 0.1) !important;
 }
 
-/* フィルターを開く ボタン（中央配置用）のスタイル微調整 */
-.filter-btn-container button {
-    border-radius: 12px !important;
-    font-weight: 800 !important;
-    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05) !important;
-}
+.filter-btn-container button { border-radius: 12px !important; font-weight: 800 !important; }
 
-/* 免責事項ボックスのスタイル */
 .disclaimer-box {
-    background: #FFFBF0; border-left: 4px solid #F59E0B; border-radius: 8px;
-    padding: 0.8rem 1rem; margin: 1.5rem 0 1rem 0; font-size: 0.75rem; color: #475569 !important; line-height: 1.5;
+    background-color: var(--secondary-background-color);
+    border-left: 4px solid #F59E0B;
+    border-radius: 8px;
+    padding: 0.8rem 1rem; margin: 1.5rem 0 1rem 0; font-size: 0.75rem; 
+    color: var(--text-color) !important; line-height: 1.5;
 }
 
+@keyframes redPulse {
+    0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.8); }
+    70% { box-shadow: 0 0 0 15px rgba(220, 38, 38, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+.disclaimer-btn-wrapper button[kind="primary"]:not([disabled]) {
+    background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%) !important; color: #FFFFFF !important;
+    border: none !important; animation: redPulse 1.5s infinite !important; transform: scale(1.02); transition: transform 0.2s ease;
+}
+.disclaimer-btn-wrapper button[kind="primary"]:not([disabled]):hover { transform: scale(1.04); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -423,14 +409,6 @@ def send_test_email(email: str, app_password: str) -> tuple[bool, str]:
             server.send_message(msg)
         return True, "テストメール送信成功！"
     except Exception as e: return False, f"送信エラー: {str(e)}"
-
-def format_volume_pct(v) -> str:
-    if v is None: return "-"
-    try:
-        fv = float(v)
-        if not np.isfinite(fv): return "-"
-        return "<0.01%" if fv < 0.01 else f"{fv:.2f}%"
-    except: return "-"
 
 # ==========================================
 # ハゲタカ診断エンジン用ヘルパー関数
@@ -756,7 +734,12 @@ def draw_chart(row):
                   annotation_position="bottom right", annotation_font_color="cyan", row=1, col=1)
     fig.add_hline(y=recent_20_low, line_width=1.5, line_dash="dot", line_color="cyan", row=1, col=2)
 
-    fig.update_layout(title=f"{row['銘柄名']} 日足 ＆ 価格帯別出来高", xaxis_rangeslider_visible=False, height=350, margin=dict(l=0, r=0, t=30, b=0), dragmode=False)
+    # チャートの背景も透明にしてテーマ（ダーク/ライト）に自動適応させる
+    fig.update_layout(
+        title=f"{row['銘柄名']} 日足 ＆ 価格帯別出来高", 
+        xaxis_rangeslider_visible=False, height=350, margin=dict(l=0, r=0, t=30, b=0), dragmode=False,
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+    )
     fig.update_xaxes(fixedrange=True); fig.update_yaxes(fixedrange=True)
     fig.update_xaxes(showticklabels=False, row=1, col=2)
     
@@ -848,7 +831,7 @@ def show_login_page():
         tab1, tab2 = st.tabs(["🔑 アプリを利用する", "⚙️ 通知設定の呼び出し"])
         
         with tab1:
-            st.markdown("<div style='text-align:center; padding: 1rem 0 0 0;'><p style='color:#666; font-size:0.85rem; margin-bottom: 0.5rem;'>共通パスワードを入力して候補一覧を閲覧します</p></div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; padding: 1rem 0 0 0;'><p style='color:var(--text-color); opacity:0.7; font-size:0.85rem; margin-bottom: 0.5rem;'>共通パスワードを入力して候補一覧を閲覧します</p></div>", unsafe_allow_html=True)
             pw_input = st.text_input("パスワード", placeholder="共通パスワードを入力", type="password", key="login_pw")
             st.markdown(f'<div class="disclaimer-box"><strong>⚠️ 免責事項</strong><br>{DISCLAIMER_TEXT}</div><div style="text-align:center; margin-bottom: 10px;"><span style="font-size: 0.8rem; font-weight: bold; color: #DC2626;">※ログインすることで上記に同意したものとみなします。</span></div>', unsafe_allow_html=True)
             if st.button("ログインして利用開始", use_container_width=True, type="primary"):
@@ -861,7 +844,7 @@ def show_login_page():
                     st.rerun()
                     
         with tab2:
-            st.markdown("<div style='text-align:center; padding: 1rem 0;'><p style='color:#666; font-size:0.85rem; margin-bottom: 1rem;'>登録済みのメールアドレスを入力して、<br>通知先や設定を変更・停止します</p></div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; padding: 1rem 0;'><p style='color:var(--text-color); opacity:0.7; font-size:0.85rem; margin-bottom: 1rem;'>登録済みのメールアドレスを入力して、<br>通知先や設定を変更・停止します</p></div>", unsafe_allow_html=True)
             email_input = st.text_input("登録済みメールアドレス", placeholder="example@gmail.com", key="login_email")
             st.markdown(f'<div class="disclaimer-box" style="margin-top:0.5rem;"><strong>⚠️ 免責事項</strong><br>{DISCLAIMER_TEXT}</div>', unsafe_allow_html=True)
             if st.button("設定を呼び出す（同意して進む）", use_container_width=True):
@@ -879,7 +862,6 @@ def show_login_page():
                     st.rerun()
 
 def show_main_page():
-    # 💡 【改善】フィルターのデフォルト初期化を「すべて」「要監視OFF」に戻す
     if "flt_level_select" not in st.session_state:
         st.session_state["flt_level_select"] = "すべて"
     if "flt_watch_only" not in st.session_state:
@@ -926,22 +908,22 @@ def show_main_page():
             lvl3p = len([v for v in display_data.values() if int(v.get("level", 0)) >= 3])
             
             st.markdown(f"""
-            <div style="display: flex; justify-content: space-around; align-items: center; background: rgba(255,255,255,0.85); 
-                        border: 1px solid rgba(15,23,42,0.08); border-radius: 12px; padding: 0.8rem; margin-bottom: 0.5rem; 
-                        box-shadow: 0 4px 15px rgba(0,0,0,0.04); backdrop-filter: blur(8px);">
+            <div style="display: flex; justify-content: space-around; align-items: center; background-color: var(--secondary-background-color); 
+                        border: 1px solid rgba(128,128,128,0.2); border-radius: 12px; padding: 0.8rem; margin-bottom: 0.5rem; 
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.04);">
                 <div style="text-align: center;">
-                    <div style="color: #64748B; font-size: 0.75rem; font-weight: 700;">LEVEL 4</div>
-                    <div style="color: #C41E3A; font-size: 1.4rem; font-weight: 900;">{lvl4}<span style="font-size: 0.8rem; color: #94A3B8; font-weight: 600; margin-left: 2px;">件</span></div>
+                    <div style="color: var(--text-color); opacity: 0.7; font-size: 0.75rem; font-weight: 700;">LEVEL 4</div>
+                    <div style="color: #C41E3A; font-size: 1.4rem; font-weight: 900;">{lvl4}<span style="font-size: 0.8rem; color: var(--text-color); opacity: 0.6; font-weight: 600; margin-left: 2px;">件</span></div>
                 </div>
-                <div style="width: 1px; height: 40px; background: rgba(15,23,42,0.08);"></div>
+                <div style="width: 1px; height: 40px; background: rgba(128,128,128,0.2);"></div>
                 <div style="text-align: center;">
-                    <div style="color: #64748B; font-size: 0.75rem; font-weight: 700;">LEVEL 3+</div>
-                    <div style="color: #FF9800; font-size: 1.4rem; font-weight: 900;">{lvl3p}<span style="font-size: 0.8rem; color: #94A3B8; font-weight: 600; margin-left: 2px;">件</span></div>
+                    <div style="color: var(--text-color); opacity: 0.7; font-size: 0.75rem; font-weight: 700;">LEVEL 3+</div>
+                    <div style="color: #FF9800; font-size: 1.4rem; font-weight: 900;">{lvl3p}<span style="font-size: 0.8rem; color: var(--text-color); opacity: 0.6; font-weight: 600; margin-left: 2px;">件</span></div>
                 </div>
-                <div style="width: 1px; height: 40px; background: rgba(15,23,42,0.08);"></div>
+                <div style="width: 1px; height: 40px; background: rgba(128,128,128,0.2);"></div>
                 <div style="text-align: center;">
-                    <div style="color: #64748B; font-size: 0.75rem; font-weight: 700;">総検出数</div>
-                    <div style="color: #0F172A; font-size: 1.4rem; font-weight: 900;">{len(display_data)}<span style="font-size: 0.8rem; color: #94A3B8; font-weight: 600; margin-left: 2px;">件</span></div>
+                    <div style="color: var(--text-color); opacity: 0.7; font-size: 0.75rem; font-weight: 700;">総検出数</div>
+                    <div style="color: var(--text-color); font-size: 1.4rem; font-weight: 900;">{len(display_data)}<span style="font-size: 0.8rem; color: var(--text-color); opacity: 0.6; font-weight: 600; margin-left: 2px;">件</span></div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -975,7 +957,7 @@ def show_main_page():
                 if st.session_state.get("flt_query", ""): chips.append(f"検索: {st.session_state['flt_query']}")
                 
                 if chips: 
-                    st.markdown(f"<div style='text-align:center; font-size:0.8rem; color:#64748B; margin-top:8px;'>✅ 適用中: {' / '.join(chips)}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align:center; font-size:0.8rem; color:var(--text-color); opacity:0.7; margin-top:8px;'>✅ 適用中: {' / '.join(chips)}</div>", unsafe_allow_html=True)
 
             st.markdown("---")
             
@@ -995,7 +977,7 @@ def show_main_page():
                 filtered_data[tk] = it
 
             if filtered_data:
-                # 💡 【改善】LEVELは昇順（1が上）、同じLEVEL内なら需給スコア降順でソート
+                # 💡 LEVEL 1から昇順に並べる（同じLEVELなら需給スコア降順）
                 sorted_items = sorted(filtered_data.items(), key=lambda x: (int(x[1].get('level',0)), -float(x[1].get('flow_score',0))))
                 for ticker, d in sorted_items:
                     render_card(ticker, d)
@@ -1019,7 +1001,6 @@ def show_main_page():
                 bottom: 25px;
                 right: 30px;
                 background: {btn_bg};
-                color: white !important;
                 padding: 14px 24px;
                 border-radius: 50px;
                 font-weight: 800;
@@ -1068,10 +1049,10 @@ def show_main_page():
             
             with strat_tab1:
                 st.markdown("""
-                <ul style='font-size: 0.9rem; line-height: 1.6; margin-top: 10px;'>
-                    <li style='margin-bottom: 8px;'><b>💎 プラチナ (Platinum)</b><br>時価総額 <b>500億～2000億円</b><br><span style='color: #64748B;'>大口資金が最も仕掛けやすいとされる規模感。</span></li>
-                    <li style='margin-bottom: 8px;'><b>🦅 大口資金参入？</b><br>出来高急増（平常時の1.5倍以上）<br><span style='color: #64748B;'>水面下での「仕込み」が疑われる状態。</span></li>
-                    <li><b>🧬 DNA（習性）</b><br>過去に短期間で急騰した実績あり。<br><span style='color: #64748B;'>値動きを主導する特定の資金が存在する可能性あり。</span></li>
+                <ul style='font-size: 0.9rem; line-height: 1.6; margin-top: 10px; color: var(--text-color); opacity: 0.9;'>
+                    <li style='margin-bottom: 8px;'><b>💎 プラチナ (Platinum)</b><br>時価総額 <b>500億～2000億円</b><br><span style='opacity: 0.7;'>大口資金が最も仕掛けやすいとされる規模感。</span></li>
+                    <li style='margin-bottom: 8px;'><b>🦅 大口資金参入？</b><br>出来高急増（平常時の1.5倍以上）<br><span style='opacity: 0.7;'>水面下での「仕込み」が疑われる状態。</span></li>
+                    <li><b>🧬 DNA（習性）</b><br>過去に短期間で急騰した実績あり。<br><span style='opacity: 0.7;'>値動きを主導する特定の資金が存在する可能性あり。</span></li>
                 </ul>
                 """, unsafe_allow_html=True)
                 
@@ -1136,7 +1117,7 @@ def show_main_page():
                         if not code.isdigit(): continue
                         diag_data = evaluate_stock(f"{code}.T")
                         if diag_data:
-                            # 💡 【改善】複数銘柄の診断結果をそれぞれ「カード（枠線）」で囲んで見やすく区別化
+                            # 💡 診断結果をカードで囲んで区切りを明確に
                             st.markdown('<div class="diagnosis-card">', unsafe_allow_html=True)
                             c1, c2 = st.columns([1, 2])
                             with c1:
@@ -1197,7 +1178,7 @@ def show_main_page():
                                 
                                 st.markdown("---")
                                 st.markdown(f"<h3 style='font-size: 1.2rem; font-weight: bold;'>🛡️ 安全性（需給の壁からの乖離率）: {diag_data['乖離率']:.1f}%</h3>", unsafe_allow_html=True)
-                                st.markdown(f"<div style='color: {'#ff4b4b' if diag_data['乖離率'] > 10 else '#4b8bff'}; background-color: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 5px;'><strong>💡 AI解説:</strong> {diag_data['safe_explain']}</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='color: {'#ff4b4b' if diag_data['乖離率'] > 10 else '#4b8bff'}; background-color: rgba(128, 128, 128, 0.05); padding: 10px; border-radius: 5px;'><strong>💡 AI解説:</strong> {diag_data['safe_explain']}</div>", unsafe_allow_html=True)
                                 st.markdown(f"**（判定: {diag_data['safe_judgment']}）**")
                                 
                                 with st.expander("💡 安全性（壁からの乖離と撤退ライン）の見方を見る"):
