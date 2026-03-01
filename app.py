@@ -8,11 +8,10 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - カート操作の即時反映（コールバック化）
 - カートボタンのUI強化（色分け・巨大化）
 - スマホ表示時のタブ崩れ防止＆スワイプ対応
-- 安全なフローティング・ジャンプボタン（カート状態連動）
 - PC版の銘柄コード入力欄の余白最適化
 - カートポップオーバー廃止＆スマートなリセットボタン化
-- カードの「株数比」を「商い熱量」アイコン表示に進化
-- 【改善】PC版カードの文字サイズ拡大＆余白最適化（間延び解消）
+- 【修正】フローティングボタンを「M&A候補」タブのみに限定表示
+- 【修正】カードから「商い熱量」を削除し、銘柄コードの「.T」を非表示化
 """
 
 import json
@@ -175,7 +174,6 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .info-label{ font-size: .72rem; color:#64748B; font-weight: 700; letter-spacing: .02em; }
 .info-value{ font-size: .93rem; color:#0F172A; font-weight: 700; }
 .price-val { color: #C41E3A; font-weight: 600; }
-.turnover-info { margin-top: 2px; font-size: 0.72rem; color: #64748B; font-weight: 700; }
 
 .tag-container { padding: 0 0.8rem 0.5rem; font-size: 0.7rem; }
 .tag-watch { background: #E8EAF6; color: #5C6BC0; padding: 2px 8px; border-radius: 999px; margin-right: 6px; font-weight: 700; display: inline-block; margin-bottom: 4px; }
@@ -197,7 +195,6 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
     .info-label { font-size: 0.9rem !important; }
     .info-value { font-size: 1.3rem !important; }
     .price-val { font-size: 1.4rem !important; }
-    .turnover-info { font-size: 0.9rem !important; margin-top: 4px !important; }
     
     .level-badge { font-size: 1.0rem !important; padding: 5px 14px !important; }
     .score-label { font-size: 0.75rem !important; }
@@ -259,43 +256,6 @@ div.stButton > button[data-testid="baseButton-primary"] {
     border: none !important; animation: redPulse 1.5s infinite !important; transform: scale(1.02); transition: transform 0.2s ease;
 }
 .disclaimer-btn-wrapper button[kind="primary"]:not([disabled]):hover { transform: scale(1.04); }
-
-/* フローティングジャンプボタン（スマホ下部中央、PC右下） */
-.floating-jump-btn {
-    position: fixed;
-    bottom: 25px;
-    right: 30px;
-    padding: 14px 24px;
-    border-radius: 50px;
-    color: white !important;
-    font-weight: 800;
-    font-size: 1.05rem;
-    text-decoration: none;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-    z-index: 999999;
-    border: 2px solid rgba(255,255,255,0.3);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.floating-jump-btn:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 15px 35px rgba(0,0,0,0.4);
-}
-@media (max-width: 768px) {
-    .floating-jump-btn {
-        bottom: 20px;
-        right: 50%;
-        transform: translateX(50%);
-        width: 90%;
-        justify-content: center;
-        text-align: center;
-    }
-    .floating-jump-btn:hover {
-        transform: translate(50%, -4px);
-    }
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -444,14 +404,6 @@ def send_test_email(email: str, app_password: str) -> tuple[bool, str]:
             server.send_message(msg)
         return True, "テストメール送信成功！"
     except Exception as e: return False, f"送信エラー: {str(e)}"
-
-def format_volume_pct(v) -> str:
-    if v is None: return "-"
-    try:
-        fv = float(v)
-        if not np.isfinite(fv): return "-"
-        return "<0.01%" if fv < 0.01 else f"{fv:.2f}%"
-    except: return "-"
 
 # ==========================================
 # ハゲタカ診断エンジン用ヘルパー関数
@@ -672,6 +624,7 @@ def evaluate_stock(ticker):
         star_desc = selected_pattern[0]
         base_logic = selected_pattern[1]
 
+        # コンプライアンス対策：マイルドな名称に変更
         flavor_logic = ""
         if cap_category == "large": flavor_logic = "時価総額が巨大なため値動きは重めですが、機関投資家や外国人投資家の資金流入をエンジンとした、強力で重厚なトレンドが期待できます。"
         elif cap_category == "target": flavor_logic = "中小型株として大口資金が最も好む規模感であり、資金が投下されれば一気に株価が動意づく（または壁を突破する）ポテンシャルを秘めています。"
@@ -720,6 +673,7 @@ def evaluate_stock(ticker):
         intervention_score = int(round(min(intervention_score, 100) / 10.0)) * 10
         intervention_score = max(10, min(intervention_score, 90))
         
+        # コンプライアンス対策：マイルドな文言
         intervention_comment = ""
         if intervention_score >= 80: intervention_comment = "🚨 【極めて濃厚】大規模な資金流入のシグナルが点灯しています。"
         elif intervention_score >= 50: intervention_comment = "👀 【予兆あり】平常時とは異なる資金の動きが観測されています。"
@@ -798,9 +752,11 @@ def render_card(ticker: str, d: Dict):
     else: card_class, score_class = "", "normal"
 
     level_color = LEVEL_COLORS.get(level, "#9E9E9E")
-    code = ticker.replace(".T", "")
-    url = f"https://finance.yahoo.co.jp/quote/{code}.T"
-    name_jp = TICKER_NAMES_JP.get(ticker, d.get('name', code))
+    
+    # 💡 銘柄コードから .T を削除して表示
+    code_only = ticker.replace(".T", "")
+    url = f"https://finance.yahoo.co.jp/quote/{code_only}.T"
+    name_jp = TICKER_NAMES_JP.get(ticker, d.get('name', code_only))
 
     tags_html = ""
     for tag in tags[:4]:
@@ -811,29 +767,12 @@ def render_card(ticker: str, d: Dict):
 
     score_text = f"{flow_score}"
     level_text = f"LEVEL {level}" if level > 0 else "LEVEL -"
-    
-    # 💡 株数比を「商い熱量」としてアイコン表示
-    vol_pct_val = d.get('volume_of_shares_pct')
-    turn_icon = ""
-    try:
-        if vol_pct_val is not None:
-            fv = float(vol_pct_val)
-            if np.isfinite(fv):
-                if fv >= 10.0: turn_icon = "🔥🔥🔥"
-                elif fv >= 5.0: turn_icon = "🔥🔥"
-                elif fv >= 2.0: turn_icon = "🔥"
-                elif fv > 0: turn_icon = "💤"
-    except:
-        pass
-    
-    formatted_pct = format_volume_pct(vol_pct_val)
-    est_mark = '（推）' if d.get('volume_of_shares_pct_is_estimated') else ''
 
     st.markdown(f"""
     <div class="spike-card {card_class}">
         <div class="card-header">
             <div class="ticker-name">
-                <a href="{url}" target="_blank">{ticker}</a>
+                <a href="{url}" target="_blank">{code_only}</a>
                 <span class="ticker-jp-name">{str(name_jp)[:12]}</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
@@ -851,9 +790,6 @@ def render_card(ticker: str, d: Dict):
             <div>
                 <span class="info-label">出来高</span><br>
                 <span class="info-value">{d.get('vol_ratio', 0)}x</span>
-                <div class="turnover-info">
-                    商い熱量 {turn_icon} {formatted_pct}{est_mark}
-                </div>
             </div>
         </div>
         <div class="tag-container">{tags_html}</div>
@@ -1034,6 +970,60 @@ def show_main_page():
                     render_card(ticker, d)
             else:
                 st.info("該当する銘柄がありません")
+                
+        # 🌟 M&A候補タブを開いている時だけフローティング・ジャンプボタンを表示
+        current_cart_len = len(st.session_state.get('cart', []))
+        if current_cart_len >= 5:
+            btn_text = "🚨 カート満杯！上に戻って【診断】へ"
+            btn_bg = "linear-gradient(135deg, #C41E3A 0%, #E63946 100%)"
+            btn_shadow = "0 10px 30px rgba(196, 30, 58, 0.5)"
+        else:
+            btn_text = f"🛒 カート: {current_cart_len}/5件 🔼 上に戻る"
+            btn_bg = "linear-gradient(135deg, #0F172A 0%, #334155 100%)"
+            btn_shadow = "0 10px 25px rgba(0,0,0,0.3)"
+
+        st.markdown(f"""
+        <style>
+        .floating-jump-btn {{
+            position: fixed;
+            bottom: 25px;
+            right: 30px;
+            background: {btn_bg};
+            color: white !important;
+            padding: 14px 24px;
+            border-radius: 50px;
+            font-weight: 800;
+            font-size: 1.05rem;
+            text-decoration: none;
+            box-shadow: {btn_shadow};
+            z-index: 999999;
+            border: 2px solid rgba(255,255,255,0.3);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }}
+        .floating-jump-btn:hover {{
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+        }}
+        @media (max-width: 768px) {{
+            .floating-jump-btn {{
+                bottom: 20px;
+                right: 50%;
+                transform: translateX(50%);
+                width: 90%;
+                font-size: 1rem;
+                padding: 12px 20px;
+            }}
+            .floating-jump-btn:hover {{
+                transform: translate(50%, -5px);
+            }}
+        }}
+        </style>
+        <a href="#top-of-page" target="_self" class="floating-jump-btn">{btn_text}</a>
+        """, unsafe_allow_html=True)
         else:
             st.info("データがありません。GitHub Actionsを実行してください。")
 
@@ -1245,63 +1235,6 @@ def show_main_page():
             st.cache_data.clear()
             st.session_state.update({"logged_in": False, "login_type": None, "email_address": "", "app_password": "", "cart": []})
             st.rerun()
-
-    # ==========================================
-    # 🌟 フローティング・ジャンプボタン（画面下部追従）
-    # ==========================================
-    current_cart_len = len(st.session_state.get('cart', []))
-    if current_cart_len >= 5:
-        btn_text = "🚨 カート満杯！上に戻って【診断】へ"
-        btn_bg = "linear-gradient(135deg, #C41E3A 0%, #E63946 100%)"
-        btn_shadow = "0 10px 30px rgba(196, 30, 58, 0.5)"
-    else:
-        btn_text = f"🛒 カート: {current_cart_len}/5件 🔼 上に戻る"
-        btn_bg = "linear-gradient(135deg, #0F172A 0%, #334155 100%)"
-        btn_shadow = "0 10px 25px rgba(0,0,0,0.3)"
-
-    st.markdown(f"""
-    <style>
-    .floating-jump-btn {{
-        position: fixed;
-        bottom: 25px;
-        right: 30px;
-        background: {btn_bg};
-        color: white !important;
-        padding: 14px 24px;
-        border-radius: 50px;
-        font-weight: 800;
-        font-size: 1.05rem;
-        text-decoration: none;
-        box-shadow: {btn_shadow};
-        z-index: 999999;
-        border: 2px solid rgba(255,255,255,0.3);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-    }}
-    .floating-jump-btn:hover {{
-        transform: translateY(-5px);
-        box-shadow: 0 15px 35px rgba(0,0,0,0.5);
-    }}
-    @media (max-width: 768px) {{
-        .floating-jump-btn {{
-            bottom: 20px;
-            right: 50%;
-            transform: translateX(50%);
-            width: 90%;
-            font-size: 1rem;
-            padding: 12px 20px;
-        }}
-        .floating-jump-btn:hover {{
-            transform: translate(50%, -5px);
-        }}
-    }}
-    </style>
-    <a href="#top-of-page" target="_self" class="floating-jump-btn">{btn_text}</a>
-    """, unsafe_allow_html=True)
-
 
 # ==========================================
 # メイン処理
