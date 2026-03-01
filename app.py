@@ -5,6 +5,7 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - 通知設定の登録・変更・削除（Google Sheets永続化）
 - 診断カート機能（高齢者配慮UI、上限表示、件数表示対応）
 - 統計表示のスマート化
+- 【Step1】ハゲタカ診断タブの追加とカート連動
 """
 
 import json
@@ -107,6 +108,13 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .card-body{ display:grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; margin-top: .2rem; }
 .info-label{ font-size: .72rem; color:#64748B; font-weight: 700; letter-spacing: .02em; }
 .info-value{ font-size: .93rem; color:#0F172A; font-weight: 700; }
+
+.stat-box{ background: rgba(255,255,255,0.88); border: 1px solid rgba(15,23,42,0.08); border-radius: 14px; padding: .9rem .9rem; box-shadow: 0 10px 30px rgba(15,23,42,0.06); text-align:center; }
+.stat-value{ font-size: 1.55rem; font-weight: 900; line-height: 1.1; }
+.stat-value.high{ color:#C41E3A; }
+.stat-value.medium{ color:#FF9800; }
+.stat-value.total{ color:#0F172A; }
+.stat-label{ color:#64748B; font-size:.78rem; font-weight:700; margin-top:.25rem; }
 
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
 
@@ -478,6 +486,20 @@ def show_login_page():
                     st.session_state["login_error"] = True
                     st.rerun()
 
+def show_disclaimer_page():
+    st.markdown("<div style='text-align: center; margin: 2rem 0;'><h2>🦅 HAGETAKA SCOPE</h2></div>", unsafe_allow_html=True)
+    st.warning(DISCLAIMER_TEXT)
+    
+    agree1 = st.checkbox("本ツールは投資助言ではないことを理解しました")
+    agree2 = st.checkbox("最終判断は自己責任で行うことを理解しました")
+    
+    # ここに発光用CSSクラスのラッパーを追加
+    st.markdown('<div class="disclaimer-btn-wrapper">', unsafe_allow_html=True)
+    if st.button("同意して利用開始", use_container_width=True, type="primary", disabled=not (agree1 and agree2)):
+        st.session_state["disclaimer_agreed"] = True
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
 def show_main_page():
     logo_base64 = get_logo_base64()
     if logo_base64:
@@ -487,7 +509,9 @@ def show_main_page():
     st.markdown(f'<p class="subtitle">M&A候補の早期検知ツール（時価総額{MARKET_CAP_MIN}億〜{MARKET_CAP_MAX}億円）</p>', unsafe_allow_html=True)
     
     data = load_data()
-    tab1, tab2 = st.tabs(["📊 M&A候補", "🔔 通知設定"])
+    
+    # === Step1: タブを3つに変更 ===
+    tab1, tab2, tab3 = st.tabs(["📊 M&A候補", "🦅 ハゲタカ診断", "🔔 通知設定"])
     
     with tab1:
         if data:
@@ -552,8 +576,7 @@ def show_main_page():
                                 st.session_state["cart"] = []
                                 st.rerun()
                             st.markdown("---")
-                            st.caption("※後日、戦略室への連携機能が追加されます")
-                            st.code(",".join(cart), language="text")
+                            st.caption("※『ハゲタカ診断』タブを開くと自動で入力されます。")
                 except: pass
 
             st.markdown("")
@@ -588,7 +611,24 @@ def show_main_page():
         else:
             st.info("データがありません。GitHub Actionsを実行してください。")
 
+    # === Step1: ハゲタカ診断タブの実装（モック版） ===
     with tab2:
+        st.markdown("### 🦅 ハゲタカ診断（結合準備中）")
+        st.info("※ここに診断エンジンが追加されます。現在はカートとの連動テスト用画面です。")
+        
+        # カートの中身から「.T」を外してスペース区切りの文字列にする
+        cart_codes = [code.replace(".T", "") for code in st.session_state.get("cart", [])]
+        default_input = " ".join(cart_codes)
+        
+        st.markdown("##### 気になる銘柄を入力（スペース区切りで複数可）")
+        with st.form(key='search_form'):
+            input_code = st.text_area("銘柄コード", value=default_input, height=68, placeholder="例: 7011 7203 9984")
+            search_btn = st.form_submit_button("🦅 ハゲタカAIで診断する")
+            
+        if search_btn:
+            st.success(f"【連動テスト成功】以下の銘柄コードを受け取りました: {input_code}")
+
+    with tab3:
         st.markdown("### 🔔 メール通知設定")
         st.info("※テスト環境のため、実際のメールは送信されません。")
         
