@@ -1,8 +1,8 @@
 """
 HAGETAKA SCOPE - M&A候補検知ツール
-- ログイン機能（共通パスワード or 登録済みメールアドレス）
-- 需給スコア（FlowScoreの強度）によるM&A候補検知
-- 利用者ごとのメール通知機能（Google Sheets永続化）
+- ログイン画面のスタイリッシュ化（タブ分け、ロゴ透過）
+- 需給スコアによるM&A候補検知
+- 通知設定の登録・変更・削除（Google Sheets永続化）
 - 診断カート機能（最大5件、戦略室連携用）
 """
 
@@ -35,18 +35,10 @@ JST = pytz.timezone("Asia/Tokyo")
 MARKET_CAP_MIN = 300
 MARKET_CAP_MAX = 2000
 
-# 需給スコア（FlowScore）閾値
 FLOW_SCORE_HIGH = 70
 FLOW_SCORE_MEDIUM = 40
 
-# LEVELカラー
-LEVEL_COLORS = {
-    4: "#C41E3A",
-    3: "#FF9800",
-    2: "#FFC107",
-    1: "#5C6BC0",
-    0: "#9E9E9E",
-}
+LEVEL_COLORS = {4: "#C41E3A", 3: "#FF9800", 2: "#FFC107", 1: "#5C6BC0", 0: "#9E9E9E"}
 
 MASTER_PASSWORD = "88888"
 DISCLAIMER_TEXT = "本ツールは市場データの可視化を目的とした補助ツールです。銘柄推奨・売買助言ではありません。最終判断は利用者ご自身で行ってください。"
@@ -69,6 +61,9 @@ div[data-testid="stAppViewContainer"]{
 .main .block-container{ max-width: 1080px !important; padding: 1.0rem 1.2rem 3.2rem 1.2rem !important; }
 h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 800 !important; color: #0F172A !important; margin-bottom: .2rem !important; }
 .subtitle{ text-align:center; color:#64748B; font-size:.85rem; margin-bottom: 1.1rem; }
+
+/* ロゴ背景透過マジック */
+.logo-img { mix-blend-mode: multiply; }
 
 /* Tabs */
 .stTabs [data-baseweb="tab-list"]{
@@ -238,6 +233,24 @@ def save_settings_to_sheet(email: str, app_password: str) -> bool:
         return True
     except: return False
 
+def delete_settings_from_sheet(email: str) -> bool:
+    if not email: return False
+    email = email.lower().strip()
+    try:
+        client = get_gspread_client()
+        if not client: return False
+        url = st.secrets["connections"]["gsheets"].get("spreadsheet")
+        ws = client.open_by_url(url).worksheet("settings")
+        try: all_emails = ws.col_values(1)
+        except: all_emails = []
+        row_index = next((i + 1 for i, ce in enumerate(all_emails) if ce and ce.lower().strip() == email), -1)
+        if row_index > 1:
+            ws.delete_rows(row_index)
+            st.cache_data.clear()
+            return True
+        return False
+    except: return False
+
 def send_test_email(email: str, app_password: str) -> tuple[bool, str]:
     try:
         msg = MIMEMultipart()
@@ -259,9 +272,6 @@ def format_volume_pct(v) -> str:
         return "<0.01%" if fv < 0.01 else f"{fv:.2f}%"
     except: return "-"
 
-# ==========================================
-# 日本語銘柄名辞書
-# ==========================================
 TICKER_NAMES_JP = {
     "3923.T": "ラクス", "4443.T": "Sansan", "4478.T": "フリー", "3994.T": "マネーフォワード",
     "4165.T": "プレイド", "4169.T": "ENECHANGE", "4449.T": "ギフティ", "4475.T": "HENNGE",
@@ -280,9 +290,6 @@ TICKER_NAMES_JP = {
     "4054.T": "日本情報クリエイト", "6095.T": "メドピア", "4436.T": "ミンカブ", "4477.T": "BASE",
 }
 
-# ==========================================
-# カード表示
-# ==========================================
 def render_card(ticker: str, d: Dict):
     flow_score = d.get("flow_score", 0)
     level = int(d.get("level", 0))
@@ -359,34 +366,61 @@ def render_card(ticker: str, d: Dict):
 # ==========================================
 def show_login_page():
     logo_base64 = get_logo_base64()
-    st.markdown("<div style='height: 60px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+    
     _, col2, _ = st.columns([1, 2, 1])
     with col2:
         if logo_base64:
-            st.markdown(f'<div style="text-align: center; margin-bottom: 1.5rem;"><img src="data:image/png;base64,{logo_base64}" style="max-width: 280px; width: 90%;"></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="text-align: center; margin-bottom: 1.5rem;"><img src="data:image/png;base64,{logo_base64}" class="logo-img" style="max-width: 280px; width: 90%;"></div>', unsafe_allow_html=True)
         else:
             st.markdown("<h1 style='text-align:center;'>🦅 源太AI ハゲタカSCOPE</h1>", unsafe_allow_html=True)
         
         if st.session_state.get("login_error"):
-            st.error("❌ パスワードまたはメールアドレスが正しくありません")
+            st.error("❌ 認証に失敗しました。入力内容をご確認ください。")
+            
+        tab1, tab2 = st.tabs(["🔑 アプリを利用する", "⚙️ 通知設定の呼び出し"])
         
-        login_input = st.text_input("パスワード / メールアドレス", placeholder="共通パスワード or 登録済みメール", key="login_input")
-        if st.button("ログイン", use_container_width=True, type="primary"):
-            st.cache_data.clear()
-            if login_input == MASTER_PASSWORD:
-                st.session_state.update({"logged_in": True, "login_error": False, "login_type": "master", "email_address": "", "app_password": ""})
-                st.rerun()
-            else:
+        with tab1:
+            st.markdown("""
+            <div style="text-align:center; padding: 1rem 0;">
+                <p style="color:#666; font-size:0.85rem; margin-bottom: 1rem;">共通パスワードを入力して候補一覧を閲覧します</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            pw_input = st.text_input("パスワード", placeholder="共通パスワードを入力", type="password", key="login_pw")
+            if st.button("ログイン", use_container_width=True, type="primary"):
+                if pw_input == MASTER_PASSWORD:
+                    st.cache_data.clear()
+                    st.session_state.update({"logged_in": True, "login_error": False, "login_type": "master"})
+                    st.rerun()
+                else:
+                    st.session_state["login_error"] = True
+                    st.rerun()
+                    
+        with tab2:
+            st.markdown("""
+            <div style="text-align:center; padding: 1rem 0;">
+                <p style="color:#666; font-size:0.85rem; margin-bottom: 1rem;">登録済みのメールアドレスを入力して、<br>通知先や設定を変更・停止します</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            email_input = st.text_input("登録済みメールアドレス", placeholder="example@gmail.com", key="login_email")
+            if st.button("設定を呼び出す", use_container_width=True):
                 try:
-                    settings = load_settings_by_email(login_input)
+                    settings = load_settings_by_email(email_input)
                     if settings:
-                        st.session_state.update({"logged_in": True, "login_error": False, "login_type": "email", "email_address": settings["email"], "app_password": decrypt_password(settings["encrypted_password"])})
+                        st.cache_data.clear()
+                        # メアドでのログイン時は免責事項をスキップ
+                        st.session_state.update({
+                            "logged_in": True, "login_error": False, "login_type": "email", 
+                            "email_address": settings["email"], "app_password": decrypt_password(settings["encrypted_password"]),
+                            "disclaimer_agreed": True 
+                        })
                         st.rerun()
                     else:
                         st.session_state["login_error"] = True
                         st.rerun()
                 except:
-                    st.cache_data.clear()
                     st.session_state["login_error"] = True
                     st.rerun()
 
@@ -404,7 +438,7 @@ def show_main_page():
     
     logo_base64 = get_logo_base64()
     if logo_base64:
-        st.markdown(f'<div style="text-align: center; margin-bottom: 0.5rem;"><img src="data:image/png;base64,{logo_base64}" style="max-width: 320px; width: 80%;"></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align: center; margin-bottom: 0.5rem;"><img src="data:image/png;base64,{logo_base64}" class="logo-img" style="max-width: 320px; width: 80%;"></div>', unsafe_allow_html=True)
     else:
         st.title("🦅 HAGETAKA SCOPE")
     st.markdown(f'<p class="subtitle">M&A候補の早期検知ツール（時価総額{MARKET_CAP_MIN}億〜{MARKET_CAP_MAX}億円）</p>', unsafe_allow_html=True)
@@ -434,15 +468,12 @@ def show_main_page():
                 try:
                     with st.popover("🔎 フィルターを開く"):
                         st.session_state["flt_query"] = st.text_input("検索", value=st.session_state.get("flt_query", ""))
-                        
-                        # マルチセレクトからセレクトボックスに変更（カクつき解消）
                         level_opt = st.selectbox(
                             "LEVEL絞り込み", 
                             options=["すべて", "LEVEL 4 のみ", "LEVEL 3 以上", "LEVEL 2 以上", "LEVEL 1 以上"],
                             index=0
                         )
                         st.session_state["flt_level_select"] = level_opt
-                        
                         st.session_state["flt_watch_only"] = st.toggle("要監視のみ", value=bool(st.session_state.get("flt_watch_only")))
                         if st.button("🔄 リセット", use_container_width=True):
                             st.session_state.update({"flt_level_select": "すべて", "flt_watch_only": False, "flt_query": ""})
@@ -473,7 +504,6 @@ def show_main_page():
             if st.session_state.get("flt_query"): chips.append(f"検索: {st.session_state['flt_query']}")
             if chips: st.caption("✅ 適用中のフィルター: " + " / ".join(chips))
             
-            # フィルター適用ロジック
             q = (st.session_state.get("flt_query") or "").strip().lower()
             w_only = bool(st.session_state.get("flt_watch_only"))
             
@@ -484,7 +514,6 @@ def show_main_page():
                 elif lvl_sel == "LEVEL 3 以上" and lv < 3: continue
                 elif lvl_sel == "LEVEL 2 以上" and lv < 2: continue
                 elif lvl_sel == "LEVEL 1 以上" and lv < 1: continue
-                
                 if w_only and not _is_watch(it): continue
                 if q and q not in f"{tk} {(it.get('name') or '')}".lower(): continue
                 filtered_data[tk] = it
@@ -500,9 +529,47 @@ def show_main_page():
             st.info("データがありません。GitHub Actionsを実行してください。")
 
     with tab2:
-        st.markdown("### 🔔 メール通知設定 (テスト環境では送信されません)")
+        st.markdown("### 🔔 メール通知設定")
         st.info("※テスト環境のため、実際のメールは送信されません。")
-        if st.button("🚪 ログアウト", type="primary"):
+        
+        current_email = st.session_state.get("email_address", "")
+        if current_email:
+            st.success(f"現在、**{current_email}** の設定を呼び出し中です。")
+            
+        email = st.text_input("Gmailアドレス", value=current_email, placeholder="example@gmail.com")
+        app_password = st.text_input("アプリパスワード（16桁）", value=st.session_state.get("app_password", ""), type="password", placeholder="xxxx xxxx xxxx xxxx")
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("💾 新規登録・更新", use_container_width=True):
+                if email and app_password:
+                    with st.spinner("保存中..."):
+                        if save_settings_to_sheet(email, app_password):
+                            st.session_state["email_address"] = email.lower().strip()
+                            st.session_state["app_password"] = app_password
+                            st.success("✅ 設定を保存しました！")
+                        else: st.error("❌ 保存に失敗しました")
+                else: st.warning("入力してください")
+        with c2:
+            if st.button("🧪 テスト送信", use_container_width=True):
+                if email and app_password:
+                    with st.spinner("送信中..."):
+                        ok, msg = send_test_email(email, app_password)
+                        if ok: st.success(f"✅ {msg}")
+                        else: st.error(f"❌ {msg}")
+                else: st.warning("入力してください")
+        with c3:
+            if st.button("🗑️ 通知を停止（削除）", use_container_width=True):
+                if email:
+                    with st.spinner("削除中..."):
+                        if delete_settings_from_sheet(email):
+                            st.session_state.update({"email_address": "", "app_password": ""})
+                            st.success("✅ 登録情報を削除し、通知を停止しました。")
+                        else: st.error("❌ 削除に失敗したか、登録されていません。")
+                else: st.warning("メールアドレスを入力してください")
+                
+        st.markdown("---")
+        if st.button("🚪 ログアウトしてトップへ", type="primary"):
             st.cache_data.clear()
             st.session_state.update({"logged_in": False, "login_type": None, "email_address": "", "app_password": "", "cart": []})
             st.rerun()
