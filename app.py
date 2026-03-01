@@ -225,6 +225,15 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .stat-label{ color:#64748B; font-size:.78rem; font-weight:700; margin-top:.25rem; }
 
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
+
+/* Streamlit特有の邪魔なボタンや透かしを完全非表示にする */
+.stDeployButton {display: none !important;}
+#MainMenu {visibility: hidden !important;}
+header {visibility: hidden !important;}
+footer {visibility: hidden !important;}
+div[data-testid="stViewerBadge"] {display: none !important;}
+div[data-testid="manage-app-button"] {display: none !important;}
+
 </style>
 """, unsafe_allow_html=True)
 
