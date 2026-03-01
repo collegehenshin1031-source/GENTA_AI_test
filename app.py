@@ -1,9 +1,9 @@
 """
 HAGETAKA SCOPE - M&A候補検知ツール
 - ログイン機能（共通パスワード or 登録済みメールアドレス）
-- FlowScore（FlowScoreの強度）によるM&A候補検知
+- 需給スコア（FlowScoreの強度）によるM&A候補検知
 - 利用者ごとのメール通知機能（Google Sheets永続化）
-- 診断カート機能（最大5件、戦略室連携用 / 右下追従型）
+- 診断カート機能（最大5件、戦略室連携用）
 """
 
 import json
@@ -35,7 +35,7 @@ JST = pytz.timezone("Asia/Tokyo")
 MARKET_CAP_MIN = 300
 MARKET_CAP_MAX = 2000
 
-# FlowScore閾値
+# 需給スコア（FlowScore）閾値
 FLOW_SCORE_HIGH = 70
 FLOW_SCORE_MEDIUM = 40
 
@@ -120,35 +120,6 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .stat-label{ color:#64748B; font-size:.78rem; font-weight:700; margin-top:.25rem; }
 
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
-
-/* =======================================
-   診断カートを右下に追従させ、邪魔なアイコンを踏み潰すハック
-   ======================================= */
-/* 見えないアンカーの次の要素を画面右下に固定化 */
-div[data-testid="element-container"]:has(.cart-anchor) + div[data-testid="element-container"] {
-    position: fixed !important;
-    bottom: 20px !important;
-    right: 20px !important;
-    z-index: 2147483647 !important; /* 全ての要素の一番手前にする絶対値 */
-    width: auto !important;
-}
-
-/* カートボタン本体を大きくしてアイコンを物理的に覆い隠す */
-div[data-testid="element-container"]:has(.cart-anchor) + div[data-testid="element-container"] button[data-testid="baseButton-secondary"] {
-    background: #ffffff !important;
-    border: 3px solid #0F172A !important;
-    color: #0F172A !important;
-    padding: 1.0rem 2.0rem !important;
-    border-radius: 999px !important;
-    box-shadow: 0px 8px 30px rgba(0,0,0,0.5) !important;
-    font-weight: 900 !important;
-    font-size: 1.1rem !important;
-    transition: transform 0.2s ease;
-}
-div[data-testid="element-container"]:has(.cart-anchor) + div[data-testid="element-container"] button[data-testid="baseButton-secondary"]:hover {
-    background: #F8FAFC !important;
-    transform: scale(1.05); /* ホバーで少しだけ大きく */
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -351,7 +322,7 @@ def render_card(ticker: str, d: Dict):
             <div style="display:flex;align-items:center;gap:8px;">
                 <span style="background:{level_color};color:white;padding:3px 10px;border-radius:12px;font-size:0.75rem;font-weight:700;">{level_text}</span>
                 <div class="ratio-badge {score_class}" title="※需給変化の強さを示す独自スコア（売買助言ではありません）">
-                    <span class="score-label">フロースコア</span>
+                    <span class="score-label">需給スコア</span>
                     <span class="score-val">{score_text}</span>
                 </div>
             </div>
@@ -463,49 +434,57 @@ def show_main_page():
                 try:
                     with st.popover("🔎 フィルターを開く"):
                         st.session_state["flt_query"] = st.text_input("検索", value=st.session_state.get("flt_query", ""))
-                        st.session_state["flt_levels"] = st.multiselect("LEVEL", options=["4", "3", "2", "1"], default=st.session_state.get("flt_levels") or [])
+                        
+                        # マルチセレクトからセレクトボックスに変更（カクつき解消）
+                        level_opt = st.selectbox(
+                            "LEVEL絞り込み", 
+                            options=["すべて", "LEVEL 4 のみ", "LEVEL 3 以上", "LEVEL 2 以上", "LEVEL 1 以上"],
+                            index=0
+                        )
+                        st.session_state["flt_level_select"] = level_opt
+                        
                         st.session_state["flt_watch_only"] = st.toggle("要監視のみ", value=bool(st.session_state.get("flt_watch_only")))
                         if st.button("🔄 リセット", use_container_width=True):
-                            st.session_state.update({"flt_levels": [], "flt_watch_only": False, "flt_query": ""})
+                            st.session_state.update({"flt_level_select": "すべて", "flt_watch_only": False, "flt_query": ""})
                             st.rerun()
                 except: pass
 
             with tb2:
-                chips = []
-                if st.session_state.get("flt_levels"): chips.append("LEVEL: " + ",".join(st.session_state["flt_levels"]))
-                if st.session_state.get("flt_watch_only"): chips.append("要監視のみ")
-                if chips: st.caption("適用中: " + " / ".join(chips))
+                cart = st.session_state.get("cart", [])
+                try:
+                    with st.popover(f"🛒 診断カート ({len(cart)}/5)"):
+                        if not cart:
+                            st.write("カートは空です")
+                        else:
+                            for c in cart: st.write(f"・ {c} （{TICKER_NAMES_JP.get(c, '')}）")
+                            if st.button("🗑 全削除", use_container_width=True):
+                                st.session_state["cart"] = []
+                                st.rerun()
+                            st.markdown("---")
+                            st.caption("※後日、戦略室への連携機能が追加されます")
+                            st.code(",".join(cart), language="text")
+                except: pass
 
-            # ==========================================
-            # カート（右下固定化ハック用アンカー）
-            # ==========================================
-            st.markdown('<div class="cart-anchor" style="display:none;"></div>', unsafe_allow_html=True)
+            st.markdown("")
+            chips = []
+            lvl_sel = st.session_state.get("flt_level_select", "すべて")
+            if lvl_sel != "すべて": chips.append(lvl_sel)
+            if st.session_state.get("flt_watch_only"): chips.append("要監視のみ")
+            if st.session_state.get("flt_query"): chips.append(f"検索: {st.session_state['flt_query']}")
+            if chips: st.caption("✅ 適用中のフィルター: " + " / ".join(chips))
             
-            cart = st.session_state.get("cart", [])
-            try:
-                with st.popover(f"🛒 診断カート ({len(cart)}/5)"):
-                    if not cart:
-                        st.write("カートは空です")
-                    else:
-                        for c in cart: st.write(f"・ {c} （{TICKER_NAMES_JP.get(c, '')}）")
-                        if st.button("🗑 全削除", use_container_width=True):
-                            st.session_state["cart"] = []
-                            st.rerun()
-                        st.markdown("---")
-                        st.caption("※後日、戦略室への連携機能が追加されます")
-                        st.code(",".join(cart), language="text")
-            except: pass
-            
-            # ==========================================
-            # フィルター適用
-            # ==========================================
+            # フィルター適用ロジック
             q = (st.session_state.get("flt_query") or "").strip().lower()
-            levels = st.session_state.get("flt_levels") or []
             w_only = bool(st.session_state.get("flt_watch_only"))
             
             filtered_data = {}
             for tk, it in display_data.items():
-                if levels and str(int(it.get("level", 0))) not in levels: continue
+                lv = int(it.get("level", 0))
+                if lvl_sel == "LEVEL 4 のみ" and lv < 4: continue
+                elif lvl_sel == "LEVEL 3 以上" and lv < 3: continue
+                elif lvl_sel == "LEVEL 2 以上" and lv < 2: continue
+                elif lvl_sel == "LEVEL 1 以上" and lv < 1: continue
+                
                 if w_only and not _is_watch(it): continue
                 if q and q not in f"{tk} {(it.get('name') or '')}".lower(): continue
                 filtered_data[tk] = it
