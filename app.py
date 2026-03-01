@@ -10,9 +10,9 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - スマホ表示時のタブ崩れ防止＆スワイプ対応
 - 安全なフローティング・ジャンプボタン（カート状態連動）
 - PC版の銘柄コード入力欄の余白最適化
-- カートポップオーバー廃止＆スマートなリセットボタン化
-- カードの「株数比」を「商い熱量」アイコン表示に進化
-- 【修正】SyntaxError (if-elseのインデント崩れ) を修正
+- 【改善】フィルターのデフォルト設定（LEVEL3以上・要監視ON）
+- 【改善】銘柄カードの「商い熱量」を削除してスッキリ化
+- 【改善】PC版のボタン配置のズレ解消（中央・縦積み配置へ最適化）
 """
 
 import json
@@ -240,6 +240,13 @@ div.stButton > button[data-testid="baseButton-primary"] {
     background: linear-gradient(135deg, #FFE4E6 0%, #FECDD3 100%) !important;
 }
 
+/* フィルターを開く ボタン（中央配置用）のスタイル微調整 */
+.filter-btn-container button {
+    border-radius: 12px !important;
+    font-weight: 800 !important;
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05) !important;
+}
+
 /* 免責事項ボックスのスタイル */
 .disclaimer-box {
     background: #FFFBF0; border-left: 4px solid #F59E0B; border-radius: 8px;
@@ -405,14 +412,6 @@ def send_test_email(email: str, app_password: str) -> tuple[bool, str]:
             server.send_message(msg)
         return True, "テストメール送信成功！"
     except Exception as e: return False, f"送信エラー: {str(e)}"
-
-def format_volume_pct(v) -> str:
-    if v is None: return "-"
-    try:
-        fv = float(v)
-        if not np.isfinite(fv): return "-"
-        return "<0.01%" if fv < 0.01 else f"{fv:.2f}%"
-    except: return "-"
 
 # ==========================================
 # ハゲタカ診断エンジン用ヘルパー関数
@@ -762,7 +761,6 @@ def render_card(ticker: str, d: Dict):
 
     level_color = LEVEL_COLORS.get(level, "#9E9E9E")
     
-    # 💡 銘柄コードから .T を削除して表示
     code_only = ticker.replace(".T", "")
     url = f"https://finance.yahoo.co.jp/quote/{code_only}.T"
     name_jp = TICKER_NAMES_JP.get(ticker, d.get('name', code_only))
@@ -776,24 +774,8 @@ def render_card(ticker: str, d: Dict):
 
     score_text = f"{flow_score}"
     level_text = f"LEVEL {level}" if level > 0 else "LEVEL -"
-    
-    # 💡 株数比を「商い熱量」としてアイコン表示
-    vol_pct_val = d.get('volume_of_shares_pct')
-    turn_icon = ""
-    try:
-        if vol_pct_val is not None:
-            fv = float(vol_pct_val)
-            if np.isfinite(fv):
-                if fv >= 10.0: turn_icon = "🔥🔥🔥"
-                elif fv >= 5.0: turn_icon = "🔥🔥"
-                elif fv >= 2.0: turn_icon = "🔥"
-                elif fv > 0: turn_icon = "💤"
-    except:
-        pass
-    
-    formatted_pct = format_volume_pct(vol_pct_val)
-    est_mark = '（推）' if d.get('volume_of_shares_pct_is_estimated') else ''
 
+    # 💡 【改善】商い熱量を完全に削除し、4項目をスッキリ配置
     st.markdown(f"""
     <div class="spike-card {card_class}">
         <div class="card-header">
@@ -803,7 +785,7 @@ def render_card(ticker: str, d: Dict):
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
                 <span class="level-badge" style="background:{level_color};">{level_text}</span>
-                <div class="ratio-badge {score_class}" title="※需給変化の強さを示す独自スコア（売買助言ではありません）">
+                <div class="ratio-badge {score_class}" title="※直近の出来高変化等を示す独自スコア">
                     <span class="score-label">需給スコア</span>
                     <span class="score-val">{score_text}</span>
                 </div>
@@ -813,19 +795,12 @@ def render_card(ticker: str, d: Dict):
             <div><span class="info-label">現在値</span><br><span class="info-value price-val">¥{d.get('price',0):,.0f}</span></div>
             <div><span class="info-label">状態</span><br><span class="info-value">{state_html}</span></div>
             <div><span class="info-label">時価総額</span><br><span class="info-value">{d.get('market_cap_oku',0):,}億円</span></div>
-            <div>
-                <span class="info-label">出来高</span><br>
-                <span class="info-value">{d.get('vol_ratio', 0)}x</span>
-                <div class="turnover-info">
-                    商い熱量 {turn_icon} {formatted_pct}{est_mark}
-                </div>
-            </div>
+            <div><span class="info-label">出来高</span><br><span class="info-value">{d.get('vol_ratio', 0)}x</span></div>
         </div>
         <div class="tag-container">{tags_html}</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # 🛒 カートボタンの表示（コールバックで即時反映）
     cart_list = st.session_state.get("cart", [])
     cart_len = len(cart_list)
     
@@ -888,6 +863,12 @@ def show_login_page():
                     st.rerun()
 
 def show_main_page():
+    # 💡 【改善】フィルターのデフォルト初期化（LEVEL 3以上、要監視ON）
+    if "flt_level_select" not in st.session_state:
+        st.session_state["flt_level_select"] = "LEVEL 3 以上"
+    if "flt_watch_only" not in st.session_state:
+        st.session_state["flt_watch_only"] = True
+
     logo_base64 = get_logo_base64()
     if logo_base64:
         st.markdown(f'<div style="text-align: center; margin-bottom: 0.5rem;"><img src="data:image/png;base64,{logo_base64}" class="logo-img" style="max-width: 320px; width: 80%;"></div>', unsafe_allow_html=True)
@@ -949,37 +930,46 @@ def show_main_page():
             </div>
             """, unsafe_allow_html=True)
 
-            tb1, tb2, tb3 = st.columns([1.5, 1.5, 3.0])
-            with tb1:
-                try:
-                    with st.popover("🔎 フィルターを開く"):
-                        st.session_state["flt_query"] = st.text_input("検索", value=st.session_state.get("flt_query", ""))
-                        level_opt = st.selectbox("LEVEL絞り込み", options=["すべて", "LEVEL 4 のみ", "LEVEL 3 以上", "LEVEL 2 以上", "LEVEL 1 以上"], index=0)
-                        st.session_state["flt_level_select"] = level_opt
-                        st.session_state["flt_watch_only"] = st.toggle("要監視のみ", value=bool(st.session_state.get("flt_watch_only")))
-                        if st.button("🔄 リセット", use_container_width=True):
-                            st.session_state.update({"flt_level_select": "すべて", "flt_watch_only": False, "flt_query": ""})
-                            st.rerun()
-                except: pass
-
-            with tb2:
+            # 💡 【改善】PC版のボタン配置のズレ解消（中央・縦積み配置）
+            st.markdown("<br>", unsafe_allow_html=True)
+            _, center_col, _ = st.columns([1, 1.8, 1])
+            with center_col:
                 st.markdown('<div class="reset-btn-container">', unsafe_allow_html=True)
                 cart_len = len(st.session_state.get("cart", []))
                 st.button(f"🗑️ カートを空にする ({cart_len}/5)", use_container_width=True, on_click=clear_cart)
                 st.markdown('</div>', unsafe_allow_html=True)
                 
-            with tb3:
+                with st.popover("🔎 フィルターを開く", use_container_width=True):
+                    level_options = ["すべて", "LEVEL 4 のみ", "LEVEL 3 以上", "LEVEL 2 以上", "LEVEL 1 以上"]
+                    current_idx = level_options.index(st.session_state["flt_level_select"]) if st.session_state["flt_level_select"] in level_options else 0
+                    
+                    st.session_state["flt_query"] = st.text_input("検索", value=st.session_state.get("flt_query", ""))
+                    level_opt = st.selectbox("LEVEL絞り込み", options=level_options, index=current_idx)
+                    watch_opt = st.toggle("要監視のみ", value=st.session_state.get("flt_watch_only", True))
+                    
+                    # 変数をセッションステートに同期
+                    st.session_state["flt_level_select"] = level_opt
+                    st.session_state["flt_watch_only"] = watch_opt
+                    
+                    if st.button("🔄 デフォルトに戻す", use_container_width=True):
+                        st.session_state.update({"flt_level_select": "LEVEL 3 以上", "flt_watch_only": True, "flt_query": ""})
+                        st.rerun()
+
+                # 適用中のフィルターチップ表示
                 chips = []
-                lvl_sel = st.session_state.get("flt_level_select", "すべて")
+                lvl_sel = st.session_state.get("flt_level_select", "LEVEL 3 以上")
                 if lvl_sel != "すべて": chips.append(lvl_sel)
-                if st.session_state.get("flt_watch_only"): chips.append("要監視のみ")
-                if st.session_state.get("flt_query"): chips.append(f"検索: {st.session_state['flt_query']}")
-                if chips: st.caption("✅ 適用中のフィルター: " + " / ".join(chips))
-            
-            st.markdown("")
+                if st.session_state.get("flt_watch_only", True): chips.append("要監視のみ")
+                if st.session_state.get("flt_query", ""): chips.append(f"検索: {st.session_state['flt_query']}")
+                
+                if chips: 
+                    st.markdown(f"<div style='text-align:center; font-size:0.8rem; color:#64748B; margin-top:8px;'>✅ 適用中: {' / '.join(chips)}</div>", unsafe_allow_html=True)
+
+            st.markdown("---")
             
             q = (st.session_state.get("flt_query") or "").strip().lower()
-            w_only = bool(st.session_state.get("flt_watch_only"))
+            w_only = bool(st.session_state.get("flt_watch_only", True))
+            lvl_sel = st.session_state.get("flt_level_select", "LEVEL 3 以上")
             
             filtered_data = {}
             for tk, it in display_data.items():
@@ -992,67 +982,67 @@ def show_main_page():
                 if q and q not in f"{tk} {(it.get('name') or '')}".lower(): continue
                 filtered_data[tk] = it
 
-            st.markdown("---")
-
             if filtered_data:
                 for ticker, d in sorted(filtered_data.items(), key=lambda x: (int(x[1].get('level',0)), float(x[1].get('flow_score',0))), reverse=True):
                     render_card(ticker, d)
             else:
                 st.info("該当する銘柄がありません")
                 
-        # 🌟 M&A候補タブを開いている時だけフローティング・ジャンプボタンを表示
-        current_cart_len = len(st.session_state.get('cart', []))
-        if current_cart_len >= 5:
-            btn_text = "🚨 カート満杯！上に戻って【診断】へ"
-            btn_bg = "linear-gradient(135deg, #C41E3A 0%, #E63946 100%)"
-            btn_shadow = "0 10px 30px rgba(196, 30, 58, 0.5)"
-        else:
-            btn_text = f"🛒 カート: {current_cart_len}/5件 🔼 上に戻る"
-            btn_bg = "linear-gradient(135deg, #0F172A 0%, #334155 100%)"
-            btn_shadow = "0 10px 25px rgba(0,0,0,0.3)"
+            # 🌟 M&A候補タブを開いている時だけフローティング・ジャンプボタンを表示
+            current_cart_len = len(st.session_state.get('cart', []))
+            if current_cart_len >= 5:
+                btn_text = "🚨 カート満杯！上に戻って【診断】へ"
+                btn_bg = "linear-gradient(135deg, #C41E3A 0%, #E63946 100%)"
+                btn_shadow = "0 10px 30px rgba(196, 30, 58, 0.5)"
+            else:
+                btn_text = f"🛒 カート: {current_cart_len}/5件 🔼 上に戻る"
+                btn_bg = "linear-gradient(135deg, #0F172A 0%, #334155 100%)"
+                btn_shadow = "0 10px 25px rgba(0,0,0,0.3)"
 
-        st.markdown(f"""
-        <style>
-        .floating-jump-btn {{
-            position: fixed;
-            bottom: 25px;
-            right: 30px;
-            background: {btn_bg};
-            color: white !important;
-            padding: 14px 24px;
-            border-radius: 50px;
-            font-weight: 800;
-            font-size: 1.05rem;
-            text-decoration: none;
-            box-shadow: {btn_shadow};
-            z-index: 999999;
-            border: 2px solid rgba(255,255,255,0.3);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }}
-        .floating-jump-btn:hover {{
-            transform: translateY(-5px);
-            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
-        }}
-        @media (max-width: 768px) {{
+            st.markdown(f"""
+            <style>
             .floating-jump-btn {{
-                bottom: 20px;
-                right: 50%;
-                transform: translateX(50%);
-                width: 90%;
-                font-size: 1rem;
-                padding: 12px 20px;
+                position: fixed;
+                bottom: 25px;
+                right: 30px;
+                background: {btn_bg};
+                color: white !important;
+                padding: 14px 24px;
+                border-radius: 50px;
+                font-weight: 800;
+                font-size: 1.05rem;
+                text-decoration: none;
+                box-shadow: {btn_shadow};
+                z-index: 999999;
+                border: 2px solid rgba(255,255,255,0.3);
+                transition: transform 0.2s ease, box-shadow 0.2s ease;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
             }}
             .floating-jump-btn:hover {{
-                transform: translate(50%, -5px);
+                transform: translateY(-5px);
+                box-shadow: 0 15px 35px rgba(0,0,0,0.5);
             }}
-        }}
-        </style>
-        <a href="#top-of-page" target="_self" class="floating-jump-btn">{btn_text}</a>
-        """, unsafe_allow_html=True)
+            @media (max-width: 768px) {{
+                .floating-jump-btn {{
+                    bottom: 20px;
+                    right: 50%;
+                    transform: translateX(50%);
+                    width: 90%;
+                    font-size: 1rem;
+                    padding: 12px 20px;
+                }}
+                .floating-jump-btn:hover {{
+                    transform: translate(50%, -5px);
+                }}
+            }}
+            </style>
+            <a href="#top-of-page" target="_self" class="floating-jump-btn">{btn_text}</a>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("データがありません。GitHub Actionsを実行してください。")
 
     # ==========================================
     # タブ2: ハゲタカ診断（＋戦略室）
