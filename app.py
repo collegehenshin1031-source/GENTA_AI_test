@@ -7,7 +7,8 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - 金融庁コンプライアンス対応（文言校正）
 - カート操作の即時反映（コールバック化）
 - カートボタンのUI強化（色分け・巨大化）
-- 【UI改善】スマホ表示時のタブ崩れ防止＆スワイプ対応
+- スマホ表示時のタブ崩れ防止＆スワイプ対応
+- 【UX究極改善】安全なフローティング・ジャンプボタン（カート状態連動）
 """
 
 import json
@@ -73,6 +74,9 @@ def remove_from_cart(ticker):
 # ==========================================
 st.set_page_config(page_title="源太AI🤖ハゲタカSCOPE", page_icon="🦅", layout="wide", initial_sidebar_state="collapsed")
 
+# ページトップへのジャンプ用アンカー（目印）
+st.markdown('<div id="top-of-page"></div>', unsafe_allow_html=True)
+
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
@@ -96,15 +100,13 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 /* ロゴ背景透過マジック */
 .logo-img { mix-blend-mode: multiply; }
 
-/* =======================================
-   Tabs (スマホ対応の安定化・スワイプ対応)
-   ======================================= */
+/* Tabs (スマホ対応の安定化・スワイプ対応) */
 .stTabs [data-baseweb="tab-list"] {
   display: flex !important;
-  flex-wrap: nowrap !important; /* 折り返しを強制ブロック */
-  overflow-x: auto !important; /* スマホで入り切らない場合は横スクロール */
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
   -webkit-overflow-scrolling: touch !important;
-  justify-content: flex-start !important; /* 左端が切れるバグを防止 */
+  justify-content: flex-start !important;
   background: rgba(255,255,255,0.85) !important;
   backdrop-filter: blur(8px);
   padding: 0.35rem !important;
@@ -114,12 +116,11 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
   margin-bottom: 1.0rem !important;
   gap: 0.3rem !important;
 }
-/* スクロールバーはダサいので隠す */
 .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none !important; }
 
 .stTabs [data-baseweb="tab"] {
-  flex: 1 1 0 !important; /* PCでは均等割付 */
-  min-width: max-content !important; /* 中の文字が潰れるのを絶対に防ぐ */
+  flex: 1 1 0 !important;
+  min-width: max-content !important;
   padding: 0.6rem 0.8rem !important;
   border-radius: 10px !important;
   font-weight: 700 !important;
@@ -127,7 +128,7 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
   justify-content: center !important;
 }
 .stTabs [data-baseweb="tab"] p {
-  white-space: nowrap !important; /* 文字の改行を強制ブロック */
+  white-space: nowrap !important;
   margin: 0 !important;
 }
 .stTabs [data-baseweb="tab"][aria-selected="true"] { background: linear-gradient(135deg, #0F172A 0%, #334155 100%) !important; }
@@ -217,6 +218,43 @@ div.stButton > button[data-testid="baseButton-primary"] {
     border: none !important; animation: redPulse 1.5s infinite !important; transform: scale(1.02); transition: transform 0.2s ease;
 }
 .disclaimer-btn-wrapper button[kind="primary"]:not([disabled]):hover { transform: scale(1.04); }
+
+/* フローティングジャンプボタン（スマホ下部中央、PC右下） */
+.floating-jump-btn {
+    position: fixed;
+    bottom: 25px;
+    right: 30px;
+    padding: 14px 24px;
+    border-radius: 50px;
+    color: white !important;
+    font-weight: 800;
+    font-size: 1.05rem;
+    text-decoration: none;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    z-index: 999999;
+    border: 2px solid rgba(255,255,255,0.3);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.floating-jump-btn:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+}
+@media (max-width: 768px) {
+    .floating-jump-btn {
+        bottom: 20px;
+        right: 50%;
+        transform: translateX(50%);
+        width: 90%;
+        justify-content: center;
+        text-align: center;
+    }
+    .floating-jump-btn:hover {
+        transform: translate(50%, -4px);
+    }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -593,7 +631,6 @@ def evaluate_stock(ticker):
         star_desc = selected_pattern[0]
         base_logic = selected_pattern[1]
 
-        # コンプライアンス対策：マイルドな名称に変更
         flavor_logic = ""
         if cap_category == "large": flavor_logic = "時価総額が巨大なため値動きは重めですが、機関投資家や外国人投資家の資金流入をエンジンとした、強力で重厚なトレンドが期待できます。"
         elif cap_category == "target": flavor_logic = "中小型株として大口資金が最も好む規模感であり、資金が投下されれば一気に株価が動意づく（または壁を突破する）ポテンシャルを秘めています。"
@@ -642,7 +679,6 @@ def evaluate_stock(ticker):
         intervention_score = int(round(min(intervention_score, 100) / 10.0)) * 10
         intervention_score = max(10, min(intervention_score, 90))
         
-        # コンプライアンス対策：マイルドな文言
         intervention_comment = ""
         if intervention_score >= 80: intervention_comment = "🚨 【極めて濃厚】大規模な資金流入のシグナルが点灯しています。"
         elif intervention_score >= 50: intervention_comment = "👀 【予兆あり】平常時とは異なる資金の動きが観測されています。"
@@ -893,7 +929,7 @@ def show_main_page():
             </div>
             """, unsafe_allow_html=True)
 
-            # 🛠 カートボタンを大きく見せるためにカラム比率を [1.0, 1.5] に変更
+            # 🛠 カートボタンを大きく見せるためにカラム比率を変更
             tb1, tb2 = st.columns([1.0, 1.5])
             with tb1:
                 try:
@@ -1165,6 +1201,63 @@ def show_main_page():
             st.cache_data.clear()
             st.session_state.update({"logged_in": False, "login_type": None, "email_address": "", "app_password": "", "cart": []})
             st.rerun()
+
+    # ==========================================
+    # 🌟 フローティング・ジャンプボタン（画面下部追従）
+    # ==========================================
+    current_cart_len = len(st.session_state.get('cart', []))
+    if current_cart_len >= 5:
+        btn_text = "🚨 カート満杯！上に戻って【診断】へ"
+        btn_bg = "linear-gradient(135deg, #C41E3A 0%, #E63946 100%)"
+        btn_shadow = "0 10px 30px rgba(196, 30, 58, 0.5)"
+    else:
+        btn_text = f"🛒 カート: {current_cart_len}/5件 🔼 上に戻る"
+        btn_bg = "linear-gradient(135deg, #0F172A 0%, #334155 100%)"
+        btn_shadow = "0 10px 25px rgba(0,0,0,0.3)"
+
+    st.markdown(f"""
+    <style>
+    .floating-jump-btn {{
+        position: fixed;
+        bottom: 25px;
+        right: 30px;
+        background: {btn_bg};
+        color: white !important;
+        padding: 14px 24px;
+        border-radius: 50px;
+        font-weight: 800;
+        font-size: 1.05rem;
+        text-decoration: none;
+        box-shadow: {btn_shadow};
+        z-index: 999999;
+        border: 2px solid rgba(255,255,255,0.3);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }}
+    .floating-jump-btn:hover {{
+        transform: translateY(-5px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+    }}
+    @media (max-width: 768px) {{
+        .floating-jump-btn {{
+            bottom: 20px;
+            right: 50%;
+            transform: translateX(50%);
+            width: 90%;
+            font-size: 1rem;
+            padding: 12px 20px;
+        }}
+        .floating-jump-btn:hover {{
+            transform: translate(50%, -5px);
+        }}
+    }}
+    </style>
+    <a href="#top-of-page" target="_self" class="floating-jump-btn">{btn_text}</a>
+    """, unsafe_allow_html=True)
+
 
 # ==========================================
 # メイン処理
