@@ -6,7 +6,8 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - 診断カート機能（高齢者配慮UI、上限表示、件数表示対応）
 - 統計表示のスマート化
 - ハゲタカ診断エンジン（AI判定・チャート）の完全統合
-- 【決定版】戦略室のメイン画面アコーディオン化＆右上ボタン完全消去
+- ヘッダーの白帯透明化 ＆ サイドバーボタン(>)の復活確保
+- 【UX改善】戦略室のタブ移動＆スマホ対応カレンダー、指標解説の追加
 """
 
 import json
@@ -78,7 +79,6 @@ div[data-testid="stAppViewContainer"]{
               radial-gradient(900px 450px at 95% 10%, rgba(196,30,58,0.10), transparent 55%),
               linear-gradient(180deg, #FFFFFF 0%, #FAFBFF 60%, #FFFFFF 100%) !important;
 }
-/* ヘッダーを消した分の余白調整 */
 .main .block-container{ max-width: 1080px !important; padding: 2.0rem 1.2rem 3.2rem 1.2rem !important; }
 h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 800 !important; color: #0F172A !important; margin-bottom: .2rem !important; }
 .subtitle{ text-align:center; color:#64748B; font-size:.85rem; margin-bottom: 1.1rem; }
@@ -434,7 +434,7 @@ def evaluate_stock(ticker):
             intervention_name = "🏢 機関投資家・大口流入期待度"
         elif market_cap_oku >= 50:
             cap_category = "target"
-            intervention_name = "🦅 ハゲタ介入期待度"
+            intervention_name = "🦅 ハゲタカ介入期待度"
         else:
             cap_category = "small"
             intervention_name = "⚠️ イナゴマネー過熱度 (超小型)"
@@ -716,51 +716,6 @@ def render_card(ticker: str, d: Dict):
                 st.rerun()
 
 # ==========================================
-# メイン画面上の戦略室（アコーディオン）
-# ==========================================
-def show_strategy_room():
-    with st.expander("🦅 ハゲタカ戦略室（記号の解説 ＆ 相場カレンダー）を開く", expanded=False):
-        c1, c2 = st.columns([1, 1.2])
-        
-        with c1:
-            st.markdown("""
-            <h4 style='color: #C41E3A; margin-top: 0;'>🦅 記号の解説</h4>
-            <ul style='font-size: 0.9rem; line-height: 1.6; color: #333;'>
-                <li style='margin-bottom: 8px;'><b>💎 プラチナ (Platinum)</b><br>時価総額 <b>500億～2000億円</b><br><span style='color: #64748B;'>ハゲタカが最も仕掛けやすい黄金サイズ。</span></li>
-                <li style='margin-bottom: 8px;'><b>🦅 ハゲタカ参戦？</b><br>出来高急増（平常時の1.5倍以上）<br><span style='color: #64748B;'>水面下での「仕込み」疑惑あり。</span></li>
-                <li><b>🧬 DNA（習性）</b><br>過去に短期間で急騰した実績あり。<br><span style='color: #64748B;'>「主（ぬし）」が住み着いている可能性あり。</span></li>
-            </ul>
-            """, unsafe_allow_html=True)
-            
-        with c2:
-            current_month = datetime.now(JST).month
-            st.markdown(f"<h4 style='color: #0F172A; margin-top: 0;'>📅 2026年 戦略カレンダー (現在: {current_month}月)</h4>", unsafe_allow_html=True)
-            
-            strategy_text = {
-                1: "⚠️ **1月：資金温存**\n外国人買いが入りますが、3月の暴落に備えて現金比率を高めましょう。",
-                2: "⚠️ **2月：様子見**\n無理に動く時期ではありません。監視銘柄の選定に集中。",
-                3: "📉 **3月：換金売り警戒＆仕込み**\n中旬の暴落は「優良株」を拾う最大のチャンス！",
-                4: "🔥 **4月：ニューマネー流入**\n新年度予算で中小型株が吹き上がります。3月の仕込みを利益に。",
-                5: "🔥 **5月：セルインメイは嘘**\n決算後の「材料出尽くし」急落は、ハゲタカの集め場です。",
-                6: "💰 **6月：ボーナス・配当再投資**\n資金潤沢. 大型株へシフトする時期。",
-                7: "💰 **7月：サマーラリー**\n夏枯れ前の最後のひと稼ぎ。",
-                8: "🌊 **8月：夏枯れ・真空地帯**\nハゲタカ不在. AIによるフラッシュクラッシュ（急落）のみ警戒。",
-                9: "📉 **9月：彼岸底**\n10月の大底に向けた調整。",
-                10: "🔥 **10月：年内最後の大底**\nここから年末ラリーへ. 全力買いの急所。",
-                11: "🍂 **11月：節税売り（タックスロス）**\n投げ売りされた銘柄を拾う。",
-                12: "🎉 **12月：掉尾の一振**\n年末ラリーで全てを利益に変えて逃げ切る。"
-            }
-            
-            st.info(f"**今月の戦略：**\n{strategy_text.get(current_month, '戦略待機中')}")
-            
-            with st.popover("📅 全月のカレンダーを見る"):
-                for m, text in strategy_text.items():
-                    if m == current_month:
-                        st.markdown(f"**👉 {text}**")
-                    else:
-                        st.markdown(text)
-
-# ==========================================
 # 画面遷移
 # ==========================================
 def show_login_page():
@@ -850,14 +805,29 @@ def show_main_page():
         st.title("🦅 HAGETAKA SCOPE")
     st.markdown(f'<p class="subtitle">M&A候補の早期検知ツール（時価総額{MARKET_CAP_MIN}億〜{MARKET_CAP_MAX}億円）</p>', unsafe_allow_html=True)
     
-    # 🌟 メイン画面に戦略室を配置（サイドバー廃止）
-    show_strategy_room()
-    
     data = load_data()
     
     tab1, tab2, tab3 = st.tabs(["📊 M&A候補", "🦅 ハゲタカ診断", "🔔 通知設定"])
     
+    # ==========================================
+    # タブ1: M&A候補（＋指標の解説）
+    # ==========================================
     with tab1:
+        # 💡 M&A候補用の解説プルダウン
+        with st.expander("💡 LEVELと需給スコアの見方", expanded=False):
+            st.markdown("""
+            **■ LEVEL（0〜4）**
+            総合的な「ポテンシャル（時価総額やPBR）」と「タイミング（決算や資金流入）」の合算評価です。
+            * **LEVEL 4 (赤)** : 全ての条件が重なった極めて稀な激アツ状態。
+            * **LEVEL 3 (橙)** : 強い資金流入と再編の素地が整っている状態。
+            * **LEVEL 2 (黄)** : 変化の兆しが明確に見え始めた状態。
+            
+            **■ 需給スコア（0〜100）**
+            直近の「出来高急増」や「底値圏での煮詰まり」など、水面下で集められている**資金流入の強さ**を示す独自の数値です。
+            * **70以上 (赤)** : 明確な大口の介入シグナルが点灯している状態。
+            * **40以上 (橙)** : いつ動き出してもおかしくない熱を帯びている状態。
+            """)
+
         if data:
             updated_at = data.get("updated_at", "不明")
             st.caption(f"📡 最終更新: {updated_at}")
@@ -954,9 +924,51 @@ def show_main_page():
         else:
             st.info("データがありません。GitHub Actionsを実行してください。")
 
+    # ==========================================
+    # タブ2: ハゲタカ診断（＋戦略室）
+    # ==========================================
     with tab2:
         st.markdown("### 🦅 ハゲタカAI 診断室")
         
+        # 🦅 スマホ対応の戦略室（タブの中に配置し、操作性を担保）
+        with st.expander("🦅 ハゲタカ戦略室（記号の解説 ＆ 相場カレンダー）を開く", expanded=False):
+            strat_tab1, strat_tab2 = st.tabs(["🦅 記号の解説", "📅 2026年 戦略カレンダー"])
+            
+            with strat_tab1:
+                st.markdown("""
+                <ul style='font-size: 0.9rem; line-height: 1.6; color: #333; margin-top: 10px;'>
+                    <li style='margin-bottom: 8px;'><b>💎 プラチナ (Platinum)</b><br>時価総額 <b>500億～2000億円</b><br><span style='color: #64748B;'>ハゲタカが最も仕掛けやすい黄金サイズ。</span></li>
+                    <li style='margin-bottom: 8px;'><b>🦅 ハゲタカ参戦？</b><br>出来高急増（平常時の1.5倍以上）<br><span style='color: #64748B;'>水面下での「仕込み」疑惑あり。</span></li>
+                    <li><b>🧬 DNA（習性）</b><br>過去に短期間で急騰した実績あり。<br><span style='color: #64748B;'>「主（ぬし）」が住み着いている可能性あり。</span></li>
+                </ul>
+                """, unsafe_allow_html=True)
+                
+            with strat_tab2:
+                current_month = datetime.now(JST).month
+                strategy_text = {
+                    1: "⚠️ **1月：資金温存**\n外国人買いが入りますが、3月の暴落に備えて現金比率を高めましょう。",
+                    2: "⚠️ **2月：様子見**\n無理に動く時期ではありません。監視銘柄の選定に集中。",
+                    3: "📉 **3月：換金売り警戒＆仕込み**\n中旬の暴落は「優良株」を拾う最大のチャンス！",
+                    4: "🔥 **4月：ニューマネー流入**\n新年度予算で中小型株が吹き上がります。3月の仕込みを利益に。",
+                    5: "🔥 **5月：セルインメイは嘘**\n決算後の「材料出尽くし」急落は、ハゲタカの集め場です。",
+                    6: "💰 **6月：ボーナス・配当再投資**\n資金潤沢. 大型株へシフトする時期。",
+                    7: "💰 **7月：サマーラリー**\n夏枯れ前の最後のひと稼ぎ。",
+                    8: "🌊 **8月：夏枯れ・真空地帯**\nハゲタカ不在. AIによるフラッシュクラッシュ（急落）のみ警戒。",
+                    9: "📉 **9月：彼岸底**\n10月の大底に向けた調整。",
+                    10: "🔥 **10月：年内最後の大底**\nここから年末ラリーへ. 全力買いの急所。",
+                    11: "🍂 **11月：節税売り（タックスロス）**\n投げ売りされた銘柄を拾う。",
+                    12: "🎉 **12月：掉尾の一振**\n年末ラリーで全てを利益に変えて逃げ切る。"
+                }
+                st.info(f"**今月の戦略 ({current_month}月)：**\n{strategy_text.get(current_month, '戦略待機中')}")
+                
+                # popoverを廃止し、そのまま下に全月を列挙（スマホで安全）
+                with st.expander("年間カレンダーをすべて見る"):
+                    for m, text in strategy_text.items():
+                        if m == current_month:
+                            st.markdown(f"**👉 {text}**")
+                        else:
+                            st.markdown(text)
+
         with st.expander("🔰 【源太AI・各項目の見方と算出ロジック】"):
             st.markdown("""
             #### ① 🦅 介入期待度（％メーター）
@@ -1076,6 +1088,9 @@ def show_main_page():
                                 draw_chart(diag_data)
                         else: st.error(f"❌ {code}: データ取得エラー")
 
+    # ==========================================
+    # タブ3: 通知設定
+    # ==========================================
     with tab3:
         st.markdown("### 🔔 メール通知設定")
         st.info("※テスト環境のため、実際のメールは送信されません。")
