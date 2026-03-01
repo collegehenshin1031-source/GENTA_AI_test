@@ -9,9 +9,10 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - カートボタンのUI強化（色分け・巨大化）
 - スマホ表示時のタブ崩れ防止＆スワイプ対応
 - 安全なフローティング・ジャンプボタン（カート状態連動）
-- 【改善】PC版の銘柄コード入力欄の余白最適化
-- 【改善】カートポップオーバー廃止＆スマートなリセットボタン化
-- 【改善】カードの「株数比」を「商い熱量」アイコン表示に進化
+- PC版の銘柄コード入力欄の余白最適化
+- カートポップオーバー廃止＆スマートなリセットボタン化
+- カードの「株数比」を「商い熱量」アイコン表示に進化
+- 【改善】PC版カードの文字サイズ拡大＆余白最適化（間延び解消）
 """
 
 import json
@@ -137,7 +138,9 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .stTabs [data-baseweb="tab"][aria-selected="true"] { background: linear-gradient(135deg, #0F172A 0%, #334155 100%) !important; }
 .stTabs [data-baseweb="tab"][aria-selected="true"] p { color: #FFFFFF !important; }
 
-/* Cards */
+/* =======================================
+   Cards (スマホベース)
+   ======================================= */
 .spike-card{
   position: relative; background: rgba(255,255,255,0.92); backdrop-filter: blur(8px);
   border-radius: 16px; padding: 1rem; margin-bottom: .75rem; border: 1px solid rgba(15,23,42,0.12);
@@ -155,6 +158,7 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .card-header{ display:flex; justify-content:space-between; align-items:center; gap:.7rem; margin-bottom: .55rem; }
 .ticker-name a{ font-weight: 800; color:#0F172A !important; text-decoration:none; font-size: 1.1rem; }
 .ticker-name a:hover{ text-decoration: underline; }
+.ticker-jp-name { font-size: 0.75rem; color: #888; margin-left: 6px; }
 
 .ratio-badge{
   min-width: 70px; text-align:center; padding: .2rem .6rem; border-radius: 8px; font-weight: 800;
@@ -165,9 +169,44 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .score-val{ font-size: 1.0rem; line-height: 1.0; }
 .score-label{ font-size: 0.55rem; line-height: 1.0; display: block; margin-bottom: 2px; opacity: 0.8;}
 
+.level-badge { padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; color: white; }
+
 .card-body{ display:grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; margin-top: .2rem; }
 .info-label{ font-size: .72rem; color:#64748B; font-weight: 700; letter-spacing: .02em; }
 .info-value{ font-size: .93rem; color:#0F172A; font-weight: 700; }
+.price-val { color: #C41E3A; font-weight: 600; }
+.turnover-info { margin-top: 2px; font-size: 0.72rem; color: #64748B; font-weight: 700; }
+
+.tag-container { padding: 0 0.8rem 0.5rem; font-size: 0.7rem; }
+.tag-watch { background: #E8EAF6; color: #5C6BC0; padding: 2px 8px; border-radius: 999px; margin-right: 6px; font-weight: 700; display: inline-block; margin-bottom: 4px; }
+.tag-normal { background: #F3F4F6; color: #444; padding: 2px 8px; border-radius: 999px; margin-right: 6px; display: inline-block; margin-bottom: 4px; }
+
+/* =======================================
+   💻 PC版の銘柄カード最適化（文字サイズ拡大・間延び防止）
+   ======================================= */
+@media (min-width: 768px) {
+    .spike-card { padding: 1.5rem 2.0rem 0.5rem !important; margin-bottom: 1.0rem !important; }
+    .ticker-name a { font-size: 1.6rem !important; }
+    .ticker-jp-name { font-size: 1.1rem !important; margin-left: 12px !important; }
+    
+    .card-body { 
+        display: flex !important; 
+        gap: 5rem !important; 
+        margin-top: 1.0rem !important; 
+    }
+    .info-label { font-size: 0.9rem !important; }
+    .info-value { font-size: 1.3rem !important; }
+    .price-val { font-size: 1.4rem !important; }
+    .turnover-info { font-size: 0.9rem !important; margin-top: 4px !important; }
+    
+    .level-badge { font-size: 1.0rem !important; padding: 5px 14px !important; }
+    .score-label { font-size: 0.75rem !important; }
+    .score-val { font-size: 1.4rem !important; }
+    .ratio-badge { padding: 0.4rem 1.0rem !important; }
+    
+    .tag-container { padding: 1.0rem 0 0.5rem !important; }
+    .tag-watch, .tag-normal { font-size: 0.85rem !important; padding: 4px 12px !important; margin-right: 8px !important; }
+}
 
 .stat-box{ background: rgba(255,255,255,0.88); border: 1px solid rgba(15,23,42,0.08); border-radius: 14px; padding: .9rem .9rem; box-shadow: 0 10px 30px rgba(15,23,42,0.06); text-align:center; }
 .stat-value{ font-size: 1.55rem; font-weight: 900; line-height: 1.1; }
@@ -633,7 +672,6 @@ def evaluate_stock(ticker):
         star_desc = selected_pattern[0]
         base_logic = selected_pattern[1]
 
-        # コンプライアンス対策：マイルドな名称に変更
         flavor_logic = ""
         if cap_category == "large": flavor_logic = "時価総額が巨大なため値動きは重めですが、機関投資家や外国人投資家の資金流入をエンジンとした、強力で重厚なトレンドが期待できます。"
         elif cap_category == "target": flavor_logic = "中小型株として大口資金が最も好む規模感であり、資金が投下されれば一気に株価が動意づく（または壁を突破する）ポテンシャルを秘めています。"
@@ -682,7 +720,6 @@ def evaluate_stock(ticker):
         intervention_score = int(round(min(intervention_score, 100) / 10.0)) * 10
         intervention_score = max(10, min(intervention_score, 90))
         
-        # コンプライアンス対策：マイルドな文言
         intervention_comment = ""
         if intervention_score >= 80: intervention_comment = "🚨 【極めて濃厚】大規模な資金流入のシグナルが点灯しています。"
         elif intervention_score >= 50: intervention_comment = "👀 【予兆あり】平常時とは異なる資金の動きが観測されています。"
@@ -768,14 +805,14 @@ def render_card(ticker: str, d: Dict):
     tags_html = ""
     for tag in tags[:4]:
         if tag == "要監視":
-            tags_html += '<span style="background:#E8EAF6;color:#5C6BC0;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;font-weight:700;">要監視</span>'
+            tags_html += f'<span class="tag-watch">要監視</span>'
         else:
-            tags_html += f'<span style="background:#F3F4F6;color:#444;padding:2px 8px;border-radius:999px;font-size:0.65rem;margin-right:6px;">{tag}</span>'
+            tags_html += f'<span class="tag-normal">{tag}</span>'
 
     score_text = f"{flow_score}"
     level_text = f"LEVEL {level}" if level > 0 else "LEVEL -"
     
-    # 💡 【改善】株数比を「商い熱量」としてアイコン表示
+    # 💡 株数比を「商い熱量」としてアイコン表示
     vol_pct_val = d.get('volume_of_shares_pct')
     turn_icon = ""
     try:
@@ -797,10 +834,10 @@ def render_card(ticker: str, d: Dict):
         <div class="card-header">
             <div class="ticker-name">
                 <a href="{url}" target="_blank">{ticker}</a>
-                <span style="font-size:0.75rem;color:#888;margin-left:6px;">{str(name_jp)[:12]}</span>
+                <span class="ticker-jp-name">{str(name_jp)[:12]}</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
-                <span style="background:{level_color};color:white;padding:3px 10px;border-radius:12px;font-size:0.75rem;font-weight:700;">{level_text}</span>
+                <span class="level-badge" style="background:{level_color};">{level_text}</span>
                 <div class="ratio-badge {score_class}" title="※需給変化の強さを示す独自スコア（売買助言ではありません）">
                     <span class="score-label">需給スコア</span>
                     <span class="score-val">{score_text}</span>
@@ -808,18 +845,18 @@ def render_card(ticker: str, d: Dict):
             </div>
         </div>
         <div class="card-body">
-            <div><span class="info-label">現在値</span><br><span class="info-value" style="color:#C41E3A;font-weight:600;">¥{d.get('price',0):,.0f}</span></div>
+            <div><span class="info-label">現在値</span><br><span class="info-value price-val">¥{d.get('price',0):,.0f}</span></div>
             <div><span class="info-label">状態</span><br><span class="info-value">{state_html}</span></div>
             <div><span class="info-label">時価総額</span><br><span class="info-value">{d.get('market_cap_oku',0):,}億円</span></div>
             <div>
                 <span class="info-label">出来高</span><br>
                 <span class="info-value">{d.get('vol_ratio', 0)}x</span>
-                <div style="margin-top:2px;font-size:0.72rem;color:#64748B;font-weight:700;">
+                <div class="turnover-info">
                     商い熱量 {turn_icon} {formatted_pct}{est_mark}
                 </div>
             </div>
         </div>
-        <div style="padding:0 0.8rem 0.5rem;font-size:0.7rem;">{tags_html}</div>
+        <div class="tag-container">{tags_html}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -829,12 +866,10 @@ def render_card(ticker: str, d: Dict):
     
     if ticker in cart_list:
         btn_text = f"🗑️ 診断カートから外す ({cart_len}/5)"
-        # 外すボタンは secondary (通常色・白)
         st.button(btn_text, key=f"cart_rm_{ticker}", use_container_width=True, on_click=remove_from_cart, args=(ticker,))
     else:
         is_full = cart_len >= 5
         btn_text = "🛒 カートの上限に達しました (5/5)" if is_full else f"🛒 診断カートに入れる ({cart_len}/5)"
-        # 入れるボタンは primary (青系)
         st.button(btn_text, key=f"cart_add_{ticker}", use_container_width=True, disabled=is_full, type="primary", on_click=add_to_cart, args=(ticker,))
 
 # ==========================================
@@ -903,7 +938,6 @@ def show_main_page():
     # タブ1: M&A候補
     # ==========================================
     with tab1:
-        # 💡 【コンプライアンス対応】LEVELと需給スコアの解説
         with st.expander("💡 LEVELと需給スコアの見方", expanded=False):
             st.markdown("""
             **■ LEVEL（0〜4）**
@@ -950,7 +984,6 @@ def show_main_page():
             </div>
             """, unsafe_allow_html=True)
 
-            # 🛠 【改善】リセットボタン化 ＆ PCでのカラム幅最適化
             tb1, tb2, tb3 = st.columns([1.5, 1.5, 3.0])
             with tb1:
                 try:
@@ -965,14 +998,12 @@ def show_main_page():
                 except: pass
 
             with tb2:
-                # 🗑️ カートリセット専用ボタン（即時反映のコールバック＆お洒落なパステルローズ色）
                 st.markdown('<div class="reset-btn-container">', unsafe_allow_html=True)
                 cart_len = len(st.session_state.get("cart", []))
                 st.button(f"🗑️ カートを空にする ({cart_len}/5)", use_container_width=True, on_click=clear_cart)
                 st.markdown('</div>', unsafe_allow_html=True)
                 
             with tb3:
-                # 右側の空いたスペースに現在適用中のフィルター情報を表示
                 chips = []
                 lvl_sel = st.session_state.get("flt_level_select", "すべて")
                 if lvl_sel != "すべて": chips.append(lvl_sel)
@@ -1012,7 +1043,6 @@ def show_main_page():
     with tab2:
         st.markdown("### 🦅 ハゲタカAI 診断室")
         
-        # 🦅 【UX改善】スマホ対応の戦略室（タブの中に配置し、popoverを廃止してアコーディオンに）
         with st.expander("🦅 ハゲタカ戦略室（記号の解説 ＆ 相場カレンダー）を開く", expanded=False):
             strat_tab1, strat_tab2 = st.tabs(["🦅 記号の解説", "📅 2026年 戦略カレンダー"])
             
@@ -1043,7 +1073,6 @@ def show_main_page():
                 }
                 st.info(f"**今月の戦略 ({current_month}月)：**\n{strategy_text.get(current_month, '戦略待機中')}")
                 
-                # popoverを廃止し、そのまま下に全月を列挙（スマホで安全・閉じづらさ解消）
                 with st.expander("年間カレンダーをすべて見る"):
                     for m, text in strategy_text.items():
                         if m == current_month:
@@ -1051,7 +1080,6 @@ def show_main_page():
                         else:
                             st.markdown(text)
 
-        # 💡 【コンプライアンス対応】診断ロジックの解説
         with st.expander("🔰 【源太AI・各項目の見方と算出ロジック】"):
             st.markdown("""
             #### ① 🦅 大口介入期待度（％メーター）
@@ -1071,7 +1099,6 @@ def show_main_page():
         cart_codes = [code.replace(".T", "") for code in st.session_state.get("cart", [])]
         default_input = " ".join(cart_codes)
         
-        # 💡 【改善】PC版での余白を削るため、text_areaからスッキリしたtext_inputに変更
         st.markdown("##### 🔍 気になる銘柄を入力")
         with st.form(key='search_form'):
             input_code = st.text_input("銘柄コード", value=default_input, placeholder="例: 7011 7203 9984 (スペース区切りで複数可)", label_visibility="collapsed")
