@@ -10,10 +10,11 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - スマホ表示時のタブ崩れ防止＆スワイプ対応
 - 安全なフローティング・ジャンプボタン（カート状態連動）
 - PC版の銘柄コード入力欄の余白最適化
-- フィルターのデフォルト設定（LEVEL3以上・要監視ON）
+- フィルターのデフォルト設定（すべて・要監視OFF）
 - 銘柄カードの「商い熱量」を削除してスッキリ化
-- 【改善】統計バーとボタン間の余白を削減し、キュッと詰まったUIへ
-- 【改善】「表示件数」を「総検出数」に変更
+- 【改善】ダークモード時の文字見えなくなるバグ対応（文字色固定）
+- 【改善】ハゲタカ診断の複数結果をカード（枠線）で囲んで区別化
+- 【改善】M&A候補の並び順を LEVEL 1 が上になる昇順に変更
 """
 
 import json
@@ -91,16 +92,27 @@ header { visibility: hidden !important; display: none !important; }
 #MainMenu, footer, .stDeployButton { display: none !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
+/* 🌟 ダークモード対策：全体の文字色を強制的に黒系（#0F172A）に固定する */
+html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, li {
+    color: #0F172A !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+
+/* 白文字にすべきところは個別に白で上書き（重要） */
+.level-badge, .ratio-badge.high, button[data-testid="baseButton-primary"], .floating-jump-btn, .stTabs [data-baseweb="tab"][aria-selected="true"] p, .cart-popover-container [data-testid="stPopover"] > button, .disclaimer-btn-wrapper button {
+    color: #FFFFFF !important;
+}
+.ratio-badge.medium { color: #0F172A !important; }
+
 /* 全体のベースデザイン */
-html, body, [class*="css"]  { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; }
 div[data-testid="stAppViewContainer"]{
   background: radial-gradient(1200px 600px at 10% 0%, rgba(92,107,192,0.10), transparent 60%),
               radial-gradient(900px 450px at 95% 10%, rgba(196,30,58,0.10), transparent 55%),
               linear-gradient(180deg, #FFFFFF 0%, #FAFBFF 60%, #FFFFFF 100%) !important;
 }
 .main .block-container{ max-width: 1080px !important; padding: 2.0rem 1.2rem 3.2rem 1.2rem !important; }
-h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 800 !important; color: #0F172A !important; margin-bottom: .2rem !important; }
-.subtitle{ text-align:center; color:#64748B; font-size:.85rem; margin-bottom: 1.1rem; }
+h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 800 !important; margin-bottom: .2rem !important; }
+.subtitle{ text-align:center; color:#64748B !important; font-size:.85rem; margin-bottom: 1.1rem; }
 
 /* ロゴ背景透過マジック */
 .logo-img { mix-blend-mode: multiply; }
@@ -137,13 +149,12 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
   margin: 0 !important;
 }
 .stTabs [data-baseweb="tab"][aria-selected="true"] { background: linear-gradient(135deg, #0F172A 0%, #334155 100%) !important; }
-.stTabs [data-baseweb="tab"][aria-selected="true"] p { color: #FFFFFF !important; }
 
 /* =======================================
    Cards (スマホベース)
    ======================================= */
 .spike-card{
-  position: relative; background: rgba(255,255,255,0.92); backdrop-filter: blur(8px);
+  position: relative; background: rgba(255,255,255,0.92) !important; backdrop-filter: blur(8px);
   border-radius: 16px; padding: 1rem; margin-bottom: .75rem; border: 1px solid rgba(15,23,42,0.12);
   box-shadow: 0 14px 44px rgba(15,23,42,0.10);
 }
@@ -151,35 +162,35 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
   content:""; position:absolute; left:0; top:10px; bottom:10px; width:4px;
   border-radius: 999px; background: rgba(15,23,42,0.10);
 }
-.spike-card.high{ border-color: rgba(196,30,58,0.32); box-shadow: 0 18px 52px rgba(196,30,58,0.14); background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,245,247,0.92) 100%); }
+.spike-card.high{ border-color: rgba(196,30,58,0.32); box-shadow: 0 18px 52px rgba(196,30,58,0.14); background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,245,247,0.92) 100%) !important; }
 .spike-card.high::before{ background: linear-gradient(180deg, #C41E3A 0%, #E63946 100%); }
-.spike-card.medium{ border-color: rgba(255,152,0,0.32); box-shadow: 0 18px 52px rgba(255,152,0,0.12); background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,250,242,0.92) 100%); }
+.spike-card.medium{ border-color: rgba(255,152,0,0.32); box-shadow: 0 18px 52px rgba(255,152,0,0.12); background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,250,242,0.92) 100%) !important; }
 .spike-card.medium::before{ background: linear-gradient(180deg, #FF9800 0%, #FFC107 100%); }
 
 .card-header{ display:flex; justify-content:space-between; align-items:center; gap:.7rem; margin-bottom: .55rem; }
-.ticker-name a{ font-weight: 800; color:#0F172A !important; text-decoration:none; font-size: 1.1rem; }
+.ticker-name a{ font-weight: 800; text-decoration:none; font-size: 1.1rem; }
 .ticker-name a:hover{ text-decoration: underline; }
-.ticker-jp-name { font-size: 0.75rem; color: #888; margin-left: 6px; }
+.ticker-jp-name { font-size: 0.75rem; color: #888 !important; margin-left: 6px; }
 
 .ratio-badge{
   min-width: 70px; text-align:center; padding: .2rem .6rem; border-radius: 8px; font-weight: 800;
   border: 1px solid rgba(15,23,42,0.10); background: rgba(255,255,255,0.8); cursor: help;
 }
-.ratio-badge.high{ color:#FFFFFF; border-color: rgba(196,30,58,0.25); background: linear-gradient(135deg, #C41E3A 0%, #E63946 100%); }
-.ratio-badge.medium{ color:#0F172A; border-color: rgba(255,152,0,0.25); background: linear-gradient(135deg, rgba(255,152,0,0.18) 0%, rgba(255,193,7,0.18) 100%); }
+.ratio-badge.high{ border-color: rgba(196,30,58,0.25); background: linear-gradient(135deg, #C41E3A 0%, #E63946 100%); }
+.ratio-badge.medium{ border-color: rgba(255,152,0,0.25); background: linear-gradient(135deg, rgba(255,152,0,0.18) 0%, rgba(255,193,7,0.18) 100%); }
 .score-val{ font-size: 1.0rem; line-height: 1.0; }
 .score-label{ font-size: 0.55rem; line-height: 1.0; display: block; margin-bottom: 2px; opacity: 0.8;}
 
-.level-badge { padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; color: white; }
+.level-badge { padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; }
 
 .card-body{ display:grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; margin-top: .2rem; }
-.info-label{ font-size: .72rem; color:#64748B; font-weight: 700; letter-spacing: .02em; }
-.info-value{ font-size: .93rem; color:#0F172A; font-weight: 700; }
-.price-val { color: #C41E3A; font-weight: 600; }
+.info-label{ font-size: .72rem; color:#64748B !important; font-weight: 700; letter-spacing: .02em; }
+.info-value{ font-size: .93rem; font-weight: 700; }
+.price-val { color: #C41E3A !important; font-weight: 600; }
 
 .tag-container { padding: 0 0.8rem 0.5rem; font-size: 0.7rem; }
-.tag-watch { background: #E8EAF6; color: #5C6BC0; padding: 2px 8px; border-radius: 999px; margin-right: 6px; font-weight: 700; display: inline-block; margin-bottom: 4px; }
-.tag-normal { background: #F3F4F6; color: #444; padding: 2px 8px; border-radius: 999px; margin-right: 6px; display: inline-block; margin-bottom: 4px; }
+.tag-watch { background: #E8EAF6; color: #5C6BC0 !important; padding: 2px 8px; border-radius: 999px; margin-right: 6px; font-weight: 700; display: inline-block; margin-bottom: 4px; }
+.tag-normal { background: #F3F4F6; color: #444 !important; padding: 2px 8px; border-radius: 999px; margin-right: 6px; display: inline-block; margin-bottom: 4px; }
 
 /* =======================================
    💻 PC版の銘柄カード最適化（文字サイズ拡大・間延び防止）
@@ -207,12 +218,22 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
     .tag-watch, .tag-normal { font-size: 0.85rem !important; padding: 4px 12px !important; margin-right: 8px !important; }
 }
 
+/* 🌟 ハゲタカ診断：銘柄ごとの枠組みカードスタイル */
+.diagnosis-card {
+    background-color: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(15, 23, 42, 0.15);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
 .stat-box{ background: rgba(255,255,255,0.88); border: 1px solid rgba(15,23,42,0.08); border-radius: 14px; padding: .9rem .9rem; box-shadow: 0 10px 30px rgba(15,23,42,0.06); text-align:center; }
 .stat-value{ font-size: 1.55rem; font-weight: 900; line-height: 1.1; }
-.stat-value.high{ color:#C41E3A; }
-.stat-value.medium{ color:#FF9800; }
-.stat-value.total{ color:#0F172A; }
-.stat-label{ color:#64748B; font-size:.78rem; font-weight:700; margin-top:.25rem; }
+.stat-value.high{ color:#C41E3A !important; }
+.stat-value.medium{ color:#FF9800 !important; }
+.stat-value.total{ }
+.stat-label{ color:#64748B !important; font-size:.78rem; font-weight:700; margin-top:.25rem; }
 
 /* ボタンの共通角丸 */
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
@@ -220,7 +241,6 @@ div.stButton > button{ border-radius: 12px !important; font-weight: 800 !importa
 /* 🛒 カートに入れる等の青系メインボタン（Primary） */
 div.stButton > button[data-testid="baseButton-primary"] {
     background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%) !important;
-    color: white !important;
     border: none !important;
     box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3) !important;
 }
@@ -252,20 +272,9 @@ div.stButton > button[data-testid="baseButton-primary"] {
 /* 免責事項ボックスのスタイル */
 .disclaimer-box {
     background: #FFFBF0; border-left: 4px solid #F59E0B; border-radius: 8px;
-    padding: 0.8rem 1rem; margin: 1.5rem 0 1rem 0; font-size: 0.75rem; color: #475569; line-height: 1.5;
+    padding: 0.8rem 1rem; margin: 1.5rem 0 1rem 0; font-size: 0.75rem; color: #475569 !important; line-height: 1.5;
 }
 
-/* 免責同意ボタンの発光アニメーション */
-@keyframes redPulse {
-    0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.8); }
-    70% { box-shadow: 0 0 0 15px rgba(220, 38, 38, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
-}
-.disclaimer-btn-wrapper button[kind="primary"]:not([disabled]) {
-    background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%) !important; color: #FFFFFF !important;
-    border: none !important; animation: redPulse 1.5s infinite !important; transform: scale(1.02); transition: transform 0.2s ease;
-}
-.disclaimer-btn-wrapper button[kind="primary"]:not([disabled]):hover { transform: scale(1.04); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -414,6 +423,14 @@ def send_test_email(email: str, app_password: str) -> tuple[bool, str]:
             server.send_message(msg)
         return True, "テストメール送信成功！"
     except Exception as e: return False, f"送信エラー: {str(e)}"
+
+def format_volume_pct(v) -> str:
+    if v is None: return "-"
+    try:
+        fv = float(v)
+        if not np.isfinite(fv): return "-"
+        return "<0.01%" if fv < 0.01 else f"{fv:.2f}%"
+    except: return "-"
 
 # ==========================================
 # ハゲタカ診断エンジン用ヘルパー関数
@@ -634,7 +651,6 @@ def evaluate_stock(ticker):
         star_desc = selected_pattern[0]
         base_logic = selected_pattern[1]
 
-        # コンプライアンス対策：マイルドな名称に変更
         flavor_logic = ""
         if cap_category == "large": flavor_logic = "時価総額が巨大なため値動きは重めですが、機関投資家や外国人投資家の資金流入をエンジンとした、強力で重厚なトレンドが期待できます。"
         elif cap_category == "target": flavor_logic = "中小型株として大口資金が最も好む規模感であり、資金が投下されれば一気に株価が動意づく（または壁を突破する）ポテンシャルを秘めています。"
@@ -863,10 +879,11 @@ def show_login_page():
                     st.rerun()
 
 def show_main_page():
+    # 💡 【改善】フィルターのデフォルト初期化を「すべて」「要監視OFF」に戻す
     if "flt_level_select" not in st.session_state:
-        st.session_state["flt_level_select"] = "LEVEL 3 以上"
+        st.session_state["flt_level_select"] = "すべて"
     if "flt_watch_only" not in st.session_state:
-        st.session_state["flt_watch_only"] = True
+        st.session_state["flt_watch_only"] = False
 
     logo_base64 = get_logo_base64()
     if logo_base64:
@@ -942,19 +959,19 @@ def show_main_page():
                     
                     st.session_state["flt_query"] = st.text_input("検索", value=st.session_state.get("flt_query", ""))
                     level_opt = st.selectbox("LEVEL絞り込み", options=level_options, index=current_idx)
-                    watch_opt = st.toggle("要監視のみ", value=st.session_state.get("flt_watch_only", True))
+                    watch_opt = st.toggle("要監視のみ", value=st.session_state.get("flt_watch_only", False))
                     
                     st.session_state["flt_level_select"] = level_opt
                     st.session_state["flt_watch_only"] = watch_opt
                     
                     if st.button("🔄 デフォルトに戻す", use_container_width=True):
-                        st.session_state.update({"flt_level_select": "LEVEL 3 以上", "flt_watch_only": True, "flt_query": ""})
+                        st.session_state.update({"flt_level_select": "すべて", "flt_watch_only": False, "flt_query": ""})
                         st.rerun()
 
                 chips = []
-                lvl_sel = st.session_state.get("flt_level_select", "LEVEL 3 以上")
+                lvl_sel = st.session_state.get("flt_level_select", "すべて")
                 if lvl_sel != "すべて": chips.append(lvl_sel)
-                if st.session_state.get("flt_watch_only", True): chips.append("要監視のみ")
+                if st.session_state.get("flt_watch_only", False): chips.append("要監視のみ")
                 if st.session_state.get("flt_query", ""): chips.append(f"検索: {st.session_state['flt_query']}")
                 
                 if chips: 
@@ -963,8 +980,8 @@ def show_main_page():
             st.markdown("---")
             
             q = (st.session_state.get("flt_query") or "").strip().lower()
-            w_only = bool(st.session_state.get("flt_watch_only", True))
-            lvl_sel = st.session_state.get("flt_level_select", "LEVEL 3 以上")
+            w_only = bool(st.session_state.get("flt_watch_only", False))
+            lvl_sel = st.session_state.get("flt_level_select", "すべて")
             
             filtered_data = {}
             for tk, it in display_data.items():
@@ -978,7 +995,9 @@ def show_main_page():
                 filtered_data[tk] = it
 
             if filtered_data:
-                for ticker, d in sorted(filtered_data.items(), key=lambda x: (int(x[1].get('level',0)), float(x[1].get('flow_score',0))), reverse=True):
+                # 💡 【改善】LEVELは昇順（1が上）、同じLEVEL内なら需給スコア降順でソート
+                sorted_items = sorted(filtered_data.items(), key=lambda x: (int(x[1].get('level',0)), -float(x[1].get('flow_score',0))))
+                for ticker, d in sorted_items:
                     render_card(ticker, d)
             else:
                 st.info("該当する銘柄がありません")
@@ -1049,7 +1068,7 @@ def show_main_page():
             
             with strat_tab1:
                 st.markdown("""
-                <ul style='font-size: 0.9rem; line-height: 1.6; color: #333; margin-top: 10px;'>
+                <ul style='font-size: 0.9rem; line-height: 1.6; margin-top: 10px;'>
                     <li style='margin-bottom: 8px;'><b>💎 プラチナ (Platinum)</b><br>時価総額 <b>500億～2000億円</b><br><span style='color: #64748B;'>大口資金が最も仕掛けやすいとされる規模感。</span></li>
                     <li style='margin-bottom: 8px;'><b>🦅 大口資金参入？</b><br>出来高急増（平常時の1.5倍以上）<br><span style='color: #64748B;'>水面下での「仕込み」が疑われる状態。</span></li>
                     <li><b>🧬 DNA（習性）</b><br>過去に短期間で急騰した実績あり。<br><span style='color: #64748B;'>値動きを主導する特定の資金が存在する可能性あり。</span></li>
@@ -1117,88 +1136,90 @@ def show_main_page():
                         if not code.isdigit(): continue
                         diag_data = evaluate_stock(f"{code}.T")
                         if diag_data:
-                            with st.container():
+                            # 💡 【改善】複数銘柄の診断結果をそれぞれ「カード（枠線）」で囲んで見やすく区別化
+                            st.markdown('<div class="diagnosis-card">', unsafe_allow_html=True)
+                            c1, c2 = st.columns([1, 2])
+                            with c1:
+                                st.markdown(f"<h2 style='margin-bottom: 0px;'>{diag_data['icons_str']} {diag_data['コード']} {diag_data['銘柄名']}</h2>", unsafe_allow_html=True)
+                                
+                                base_rank = diag_data['ランク']
+                                warning = diag_data['警告']
+                                rank_color = "red" if base_rank == "S" else "orange" if base_rank == "A" else "blue"
+                                
+                                if warning:
+                                    rank_html = f"<h3 style='color:{rank_color}; margin-top: 5px;'>総合判定: {base_rank} <span style='color:#ff4b4b; font-size:0.8em;'>{warning}</span></h3>"
+                                else:
+                                    rank_html = f"<h3 style='color:{rank_color}; margin-top: 5px;'>総合判定: {base_rank}</h3>"
+                                
+                                st.markdown(rank_html, unsafe_allow_html=True)
+                                
+                                with st.expander("💡 総合判定の基準を見る"):
+                                    st.markdown("""
+                                    * **【Sランク】** 大口介入期待度80%以上 ＋ 上昇期待値(上値余地)30%以上
+                                    * **【Aランク】** 大口介入期待度70%以上（強い資金流入シグナル）
+                                    * **【Bランク】** 大口介入期待度50%以上、または プラチナサイズ(500〜2000億) ＋ 底値圏での煮詰まり
+                                    * **【Cランク】** 上記以外の標準的な状態
+                                    * **【注意】** 需給の壁から20%以上乖離している場合、過熱感のアラートが表示されます
+                                    """)
+
+                                st.write(f"現在値: **{diag_data['現在値']}** 円")
+                                st.write(f"時価総額: **{diag_data['時価総額_表示']}**")
+                                st.write(f"配当情報: **{diag_data['dividend_text']}**")
+                                st.write(f"商い熱量: **{diag_data['turnover_str']}**")
+                                
+                                with st.expander("💡 商い熱量（株式回転率）とは？"):
+                                    st.markdown("""
+                                    **商い熱量 ＝ 出来高が総発行株数の何％にあたるか（株式回転率）**
+                                    この数値は、株価が動く「エネルギーの大きさ」を見極めるための重要なテクニカル指標です。
+                                    
+                                    * **① 資金流入の規模感の把握**
+                                      前日比で出来高が増えていても、発行済株数に対してごくわずかであれば限定的な動きです。しかし、1日で「5%」や「10%」が取引されていたら、明確な資金介入と株主構成の変化を伴う大きなトレンドの初動（または終焉）の可能性を示唆します。
+                                    * **② 流動性（浮動株）の消化具合**
+                                      発行済株数の中には、市場に出回らない「固定株」があります。発行済株数の5%の出来高があったということは、実際に市場に出回っている株（浮動株）の10%〜20%が1日で入れ替わった計算になり、極めて活発な商いと言えます。
+                                    * **③ 需給の壁（戻り売り）の突破力**
+                                      上値に過去の取引が密集する壁（戻り売り圧力）があったとしても、この商い熱量が異常に高ければ、その売り圧力を吸収して上昇するだけのエネルギーが市場に存在することの裏付けとなります。
+                                    """)
+                                
                                 st.markdown("---")
-                                c1, c2 = st.columns([1, 2])
-                                with c1:
-                                    st.markdown(f"<h2 style='margin-bottom: 0px;'>{diag_data['icons_str']} {diag_data['コード']} {diag_data['銘柄名']}</h2>", unsafe_allow_html=True)
-                                    
-                                    base_rank = diag_data['ランク']
-                                    warning = diag_data['警告']
-                                    rank_color = "red" if base_rank == "S" else "orange" if base_rank == "A" else "blue"
-                                    
-                                    if warning:
-                                        rank_html = f"<h3 style='color:{rank_color}; margin-top: 5px;'>総合判定: {base_rank} <span style='color:#ff4b4b; font-size:0.8em;'>{warning}</span></h3>"
-                                    else:
-                                        rank_html = f"<h3 style='color:{rank_color}; margin-top: 5px;'>総合判定: {base_rank}</h3>"
-                                    
-                                    st.markdown(rank_html, unsafe_allow_html=True)
-                                    
-                                    with st.expander("💡 総合判定の基準を見る"):
-                                        st.markdown("""
-                                        * **【Sランク】** 大口介入期待度80%以上 ＋ 上昇期待値(上値余地)30%以上
-                                        * **【Aランク】** 大口介入期待度70%以上（強い資金流入シグナル）
-                                        * **【Bランク】** 大口介入期待度50%以上、または プラチナサイズ(500〜2000億) ＋ 底値圏での煮詰まり
-                                        * **【Cランク】** 上記以外の標準的な状態
-                                        * **【注意】** 需給の壁から20%以上乖離している場合、過熱感のアラートが表示されます
-                                        """)
-
-                                    st.write(f"現在値: **{diag_data['現在値']}** 円")
-                                    st.write(f"時価総額: **{diag_data['時価総額_表示']}**")
-                                    st.write(f"配当情報: **{diag_data['dividend_text']}**")
-                                    st.write(f"商い熱量: **{diag_data['turnover_str']}**")
-                                    
-                                    with st.expander("💡 商い熱量（株式回転率）とは？"):
-                                        st.markdown("""
-                                        **商い熱量 ＝ 出来高が総発行株数の何％にあたるか（株式回転率）**
-                                        この数値は、株価が動く「エネルギーの大きさ」を見極めるための重要なテクニカル指標です。
-                                        
-                                        * **① 資金流入の規模感の把握**
-                                          前日比で出来高が増えていても、発行済株数に対してごくわずかであれば限定的な動きです。しかし、1日で「5%」や「10%」が取引されていたら、明確な資金介入と株主構成の変化を伴う大きなトレンドの初動（または終焉）の可能性を示唆します。
-                                        * **② 流動性（浮動株）の消化具合**
-                                          発行済株数の中には、市場に出回らない「固定株」があります。発行済株数の5%の出来高があったということは、実際に市場に出回っている株（浮動株）の10%〜20%が1日で入れ替わった計算になり、極めて活発な商いと言えます。
-                                        * **③ 需給の壁（戻り売り）の突破力**
-                                          上値に過去の取引が密集する壁（戻り売り圧力）があったとしても、この商い熱量が異常に高ければ、その売り圧力を吸収して上昇するだけのエネルギーが市場に存在することの裏付けとなります。
-                                        """)
-                                    
-                                    st.markdown("---")
-                                    st.markdown(f"### {diag_data['intervention_name']}: {diag_data['intervention_score']}%")
-                                    st.progress(diag_data['intervention_score'] / 100.0)
-                                    st.markdown(f"**{diag_data['intervention_comment']}**")
-                                    
-                                with c2:
-                                    st.markdown("##### 📋 AI診断カルテ")
-                                    st.markdown(f"#### {diag_data['star_rating']} {diag_data['star_desc']}")
-                                    
-                                    st.markdown(f"""
-                                    <div style="background-color: rgba(75, 139, 255, 0.08); padding: 15px; border-left: 5px solid #4b8bff; border-radius: 5px; margin-bottom: 15px; font-size: 0.95rem; line-height: 1.6;">
-                                    {diag_data['star_logic']}
+                                st.markdown(f"### {diag_data['intervention_name']}: {diag_data['intervention_score']}%")
+                                st.progress(diag_data['intervention_score'] / 100.0)
+                                st.markdown(f"**{diag_data['intervention_comment']}**")
+                                
+                            with c2:
+                                st.markdown("##### 📋 AI診断カルテ")
+                                st.markdown(f"#### {diag_data['star_rating']} {diag_data['star_desc']}")
+                                
+                                st.markdown(f"""
+                                <div style="background-color: rgba(75, 139, 255, 0.08); padding: 15px; border-left: 5px solid #4b8bff; border-radius: 5px; margin-bottom: 15px; font-size: 0.95rem; line-height: 1.6;">
+                                {diag_data['star_logic']}
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                st.markdown("---")
+                                st.markdown(f"<h3 style='font-size: 1.2rem; font-weight: bold;'>🛡️ 安全性（需給の壁からの乖離率）: {diag_data['乖離率']:.1f}%</h3>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='color: {'#ff4b4b' if diag_data['乖離率'] > 10 else '#4b8bff'}; background-color: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 5px;'><strong>💡 AI解説:</strong> {diag_data['safe_explain']}</div>", unsafe_allow_html=True)
+                                st.markdown(f"**（判定: {diag_data['safe_judgment']}）**")
+                                
+                                with st.expander("💡 安全性（壁からの乖離と撤退ライン）の見方を見る"):
+                                    safe_explain_html = f"""
+                                    <div style='font-size: 0.95rem; line-height: 1.6;'>
+                                    当ツールでは、安全性を<strong>「最大の需給の壁（オレンジの点線）」からの乖離率（％）</strong>で判定します。<br>
+                                    マイナス圏（壁より下）は過去のしこり玉を恐れて一般投資家が手を出せない「割安圏」であり、大口資金が水面下で仕込むポイントになりやすいです。<br><br>
+                                    <span style='color: #4b8bff; font-weight: bold;'>【🛡️プロのリスク管理】マイナス圏で仕込む場合は、直近の底値（青の点線）を下回ったら「シナリオ崩れ」として撤退（損切り）を検討することで、大きな損失を防ぐ目安となります。</span><br><br>
+                                    <strong>【AIの判定基準一覧】</strong><br>
+                                    ・<strong>-5.0%以下 【📉 割安】</strong> 底値仕込みが適切とされるゾーン（任意）<br>
+                                    ・<strong>0.0%以下 【⚔️ 激戦】</strong> ブレイク前夜期待<br>
+                                    ・<strong>+10.0%以内 【🚀 安全圏】</strong> トレンド初動かも！？<br>
+                                    ・<strong>+20.0%以内 【⚠️ 警戒】</strong> 短期過熱気味警戒レベル<br>
+                                    ・<strong>+20.1%以上 【💀 高度な警戒】</strong> 高値掴みリスク大
                                     </div>
-                                    """, unsafe_allow_html=True)
-                                    
-                                    st.markdown("---")
-                                    st.markdown(f"<h3 style='font-size: 1.2rem; font-weight: bold;'>🛡️ 安全性（需給の壁からの乖離率）: {diag_data['乖離率']:.1f}%</h3>", unsafe_allow_html=True)
-                                    st.markdown(f"<div style='color: {'#ff4b4b' if diag_data['乖離率'] > 10 else '#4b8bff'}; background-color: rgba(255, 255, 255, 0.05); padding: 10px; border-radius: 5px;'><strong>💡 AI解説:</strong> {diag_data['safe_explain']}</div>", unsafe_allow_html=True)
-                                    st.markdown(f"**（判定: {diag_data['safe_judgment']}）**")
-                                    
-                                    with st.expander("💡 安全性（壁からの乖離と撤退ライン）の見方を見る"):
-                                        safe_explain_html = f"""
-                                        <div style='color: #475569; font-size: 0.95rem; line-height: 1.6;'>
-                                        当ツールでは、安全性を<strong>「最大の需給の壁（オレンジの点線）」からの乖離率（％）</strong>で判定します。<br>
-                                        マイナス圏（壁より下）は過去のしこり玉を恐れて一般投資家が手を出せない「割安圏」であり、大口資金が水面下で仕込むポイントになりやすいです。<br><br>
-                                        <span style='color: #4b8bff; font-weight: bold;'>【🛡️プロのリスク管理】マイナス圏で仕込む場合は、直近の底値（青の点線）を下回ったら「シナリオ崩れ」として撤退（損切り）を検討することで、大きな損失を防ぐ目安となります。</span><br><br>
-                                        <strong>【AIの判定基準一覧】</strong><br>
-                                        ・<strong>-5.0%以下 【📉 割安】</strong> 底値仕込みが適切とされるゾーン（任意）<br>
-                                        ・<strong>0.0%以下 【⚔️ 激戦】</strong> ブレイク前夜期待<br>
-                                        ・<strong>+10.0%以内 【🚀 安全圏】</strong> トレンド初動かも！？<br>
-                                        ・<strong>+20.0%以内 【⚠️ 警戒】</strong> 短期過熱気味警戒レベル<br>
-                                        ・<strong>+20.1%以上 【💀 高度な警戒】</strong> 高値掴みリスク大
-                                        </div>
-                                        """
-                                        st.markdown(safe_explain_html, unsafe_allow_html=True)
+                                    """
+                                    st.markdown(safe_explain_html, unsafe_allow_html=True)
 
-                                draw_chart(diag_data)
-                        else: st.error(f"❌ {code}: データ取得エラー")
+                            draw_chart(diag_data)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        else: 
+                            st.error(f"❌ {code}: データ取得エラー")
 
     # ==========================================
     # タブ3: 通知設定
