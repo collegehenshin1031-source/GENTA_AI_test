@@ -1460,25 +1460,7 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, d
                     vol_ratio = round(latest_volume / avg_volume, 2) if avg_volume > 0 else 0
                     latest_price = float(df["Close"].iloc[-1])
 
-                    # 下値ライン（直近6か月の価格帯別売買高の高出来高ゾーン下限）
-                    support_price = None
-                    support_upper = None
-                    support_gap_pct = None
-                    support_tag = None
-                    try:
-                        df_6m = df.tail(126).copy()  # 約6か月
-                        vp6 = calculate_volume_profile(df_6m, bins=24)
-                        support_price, support_upper = compute_support_from_recent_growth(
-                            df_6m,
-                            bins=24,
-                            recent_ratio=0.33,
-                            low_band_ratio=0.35,
-                        )
-                        if support_price is None:
-                            support_price, support_upper = compute_support_zone_from_profile(vp6, threshold_ratio=0.60)
-                        support_tag, support_gap_pct = support_position_tag(latest_price, support_price)
-                    except Exception:
-                        pass
+                   
 
                     price_change_5d = round((df["Close"].iloc[-1] / df["Close"].iloc[-6] - 1) * 100, 2) if len(df) >= 6 else 0
 
