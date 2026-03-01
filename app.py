@@ -3,10 +3,7 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - ログイン機能（共通パスワード or 登録済みメールアドレス）
 - FlowScore（FlowScoreの強度）によるM&A候補検知
 - 利用者ごとのメール通知機能（Google Sheets永続化）
-- 診断カート機能（最大5件、戦略室連携用）
-
-※本ツールは市場データの可視化を目的とした補助ツールです。
-※銘柄推奨・売買助言ではありません。
+- 診断カート機能（最大5件、戦略室連携用 / 右下追従型）
 """
 
 import json
@@ -42,119 +39,17 @@ MARKET_CAP_MAX = 2000
 FLOW_SCORE_HIGH = 70
 FLOW_SCORE_MEDIUM = 40
 
-# LEVELカラー（表示は数字のみ）
+# LEVELカラー
 LEVEL_COLORS = {
-    4: "#C41E3A",  # 赤
-    3: "#FF9800",  # オレンジ
-    2: "#FFC107",  # 黄
-    1: "#5C6BC0",  # 青紫
-    0: "#9E9E9E",  # グレー
+    4: "#C41E3A",
+    3: "#FF9800",
+    2: "#FFC107",
+    1: "#5C6BC0",
+    0: "#9E9E9E",
 }
 
-# 共通ログインパスワード（初回用）
 MASTER_PASSWORD = "88888"
-
-# 免責文言
 DISCLAIMER_TEXT = "本ツールは市場データの可視化を目的とした補助ツールです。銘柄推奨・売買助言ではありません。最終判断は利用者ご自身で行ってください。"
-
-# ==========================================
-# 表記ゆれ吸収（フィルター/タグの安定化）
-# ==========================================
-STATE_HELP = {
-    "要監視": "変化が強めです。優先して確認します。",
-    "観測中": "変化の兆しがあります。数日単位で見守ります。",
-    "沈静": "今は大きな変化が見えません。記録だけ残します。",
-}
-
-def _norm_label(s) -> str:
-    """ラベルの表記ゆれを吸収（先頭記号/余計な空白/括弧など）"""
-    if s is None:
-        return ""
-    t = str(s).strip()
-    t = re.sub(r'^[\s○●◎◯・\-–—★☆▶▷→⇒✓✔✅☑︎【\[\(（]+', '', t).strip()
-    return t
-
-def _norm_tag(t) -> str:
-    """タグの正規化"""
-    t = _norm_label(t)
-    if not t:
-        return ""
-    if "要監視" in t:
-        return "要監視"
-    return t
-
-def _tags_list(x) -> List[str]:
-    if x is None:
-        return []
-    if isinstance(x, list):
-        return [str(v) for v in x]
-    return [str(x)]
-
-def _normalize_item(it: Dict) -> Dict:
-    """表示/フィルター向けに状態とタグを安定化"""
-    d = dict(it) if isinstance(it, dict) else {}
-
-    raw_state = d.get("display_state", d.get("state", ""))
-    tags_raw = _tags_list(d.get("tags"))
-    tags_norm = []
-    has_watch = ("要監視" in _norm_label(raw_state))
-    
-    for tg in tags_raw:
-        nt = _norm_tag(tg)
-        if not nt:
-            continue
-        if nt == "要監視":
-            has_watch = True
-            continue
-        # 旧仕様のゾーンタグを除外
-        if nt in ["下側ゾーン", "上側ゾーン"]:
-            continue
-        tags_norm.append(nt)
-
-    state = _norm_label(raw_state) or "観測中"
-    if has_watch:
-        state = "要監視"
-    d["display_state"] = state
-
-    uniq = []
-    seen = set()
-    for t in tags_norm:
-        if t not in seen:
-            seen.add(t)
-            uniq.append(t)
-    d["tags"] = uniq
-    return d
-
-def _is_watch(item: dict) -> bool:
-    """要監視判定"""
-    state = _norm_label(item.get("display_state", item.get("state", "")))
-    if "要監視" in state:
-        return True
-    for tg in _tags_list(item.get("tags")):
-        if "要監視" in _norm_label(tg):
-            return True
-    return False
-
-# ==========================================
-# 日本語銘柄名辞書
-# ==========================================
-TICKER_NAMES_JP = {
-    "3923.T": "ラクス", "4443.T": "Sansan", "4478.T": "フリー", "3994.T": "マネーフォワード",
-    "4165.T": "プレイド", "4169.T": "ENECHANGE", "4449.T": "ギフティ", "4475.T": "HENNGE",
-    "4431.T": "スマレジ", "4057.T": "インターファクトリー", "3697.T": "SHIFT", "4194.T": "ビジョナル",
-    "4180.T": "Appier", "3655.T": "ブレインパッド", "4751.T": "サイバーエージェント",
-    "3681.T": "ブイキューブ", "6035.T": "IRジャパン", "4384.T": "ラクスル", "9558.T": "ジャパニアス",
-    "4441.T": "トビラシステムズ", "6315.T": "TOWA", "6323.T": "ローツェ", "6890.T": "フェローテック",
-    "7735.T": "SCREENホールディングス", "6146.T": "ディスコ", "6266.T": "タツモ",
-    "3132.T": "マクニカホールディングス", "6920.T": "レーザーテック", "4565.T": "そーせいグループ",
-    "4587.T": "ペプチドリーム", "4582.T": "シンバイオ製薬", "4583.T": "カイオム・バイオ",
-    "4563.T": "アンジェス", "2370.T": "メディネット", "4593.T": "ヘリオス", "3064.T": "MonotaRO",
-    "3092.T": "ZOZO", "3769.T": "GMOペイメント", "4385.T": "メルカリ", "7342.T": "ウェルスナビ",
-    "4480.T": "メドレー", "6560.T": "LTS", "3182.T": "オイシックス", "9166.T": "GENDA",
-    "3765.T": "ガンホー", "3659.T": "ネクソン", "3656.T": "KLab", "3932.T": "アカツキ",
-    "4071.T": "プラスアルファ", "4485.T": "JTOWER", "7095.T": "Macbee Planet",
-    "4054.T": "日本情報クリエイト", "6095.T": "メドピア", "4436.T": "ミンカブ", "4477.T": "BASE",
-}
 
 # ==========================================
 # UI設定・CSS
@@ -227,69 +122,116 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
 
 /* =======================================
-   診断カートを右下に固定し、邪魔なアイコンを物理的に踏み潰す
+   診断カートを右下に追従させ、邪魔なアイコンを踏み潰すハック
    ======================================= */
-div[data-testid="stPopover"]:has(p:contains("診断カート")) {
+/* 見えないアンカーの次の要素を画面右下に固定化 */
+div[data-testid="element-container"]:has(.cart-anchor) + div[data-testid="element-container"] {
     position: fixed !important;
-    bottom: 10px !important;
-    right: 15px !important;
-    z-index: 999999 !important; /* 常に一番手前に表示 */
-    background: #ffffff !important;
-    border-radius: 12px !important;
-    box-shadow: 0px 5px 25px rgba(0,0,0,0.4) !important;
+    bottom: 20px !important;
+    right: 20px !important;
+    z-index: 2147483647 !important; /* 全ての要素の一番手前にする絶対値 */
+    width: auto !important;
 }
 
-/* 覆い隠す面積を広げるため、ボタン自体を少し大きく太くする */
-div[data-testid="stPopover"]:has(p:contains("診断カート")) > button {
-    padding: 0.8rem 1.8rem !important;
-    border: 2px solid #0F172A !important;
+/* カートボタン本体を大きくしてアイコンを物理的に覆い隠す */
+div[data-testid="element-container"]:has(.cart-anchor) + div[data-testid="element-container"] button[data-testid="baseButton-secondary"] {
     background: #ffffff !important;
+    border: 3px solid #0F172A !important;
+    color: #0F172A !important;
+    padding: 1.0rem 2.0rem !important;
+    border-radius: 999px !important;
+    box-shadow: 0px 8px 30px rgba(0,0,0,0.5) !important;
+    font-weight: 900 !important;
+    font-size: 1.1rem !important;
+    transition: transform 0.2s ease;
 }
-
-
+div[data-testid="element-container"]:has(.cart-anchor) + div[data-testid="element-container"] button[data-testid="baseButton-secondary"]:hover {
+    background: #F8FAFC !important;
+    transform: scale(1.05); /* ホバーで少しだけ大きく */
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# ヘルパー関数
+# 表記ゆれ吸収・ヘルパー
 # ==========================================
+STATE_HELP = {
+    "要監視": "変化が強めです。優先して確認します。",
+    "観測中": "変化の兆しがあります。数日単位で見守ります。",
+    "沈静": "今は大きな変化が見えません。記録だけ残します。",
+}
+
+def _norm_label(s) -> str:
+    if s is None: return ""
+    t = str(s).strip()
+    return re.sub(r'^[\s○●◎◯・\-–—★☆▶▷→⇒✓✔✅☑︎【\[\(（]+', '', t).strip()
+
+def _norm_tag(t) -> str:
+    t = _norm_label(t)
+    if not t: return ""
+    if "要監視" in t: return "要監視"
+    return t
+
+def _tags_list(x) -> List[str]:
+    if x is None: return []
+    if isinstance(x, list): return [str(v) for v in x]
+    return [str(x)]
+
+def _normalize_item(it: Dict) -> Dict:
+    d = dict(it) if isinstance(it, dict) else {}
+    raw_state = d.get("display_state", d.get("state", ""))
+    tags_raw = _tags_list(d.get("tags"))
+    tags_norm = []
+    has_watch = ("要監視" in _norm_label(raw_state))
+    for tg in tags_raw:
+        nt = _norm_tag(tg)
+        if not nt: continue
+        if nt == "要監視": has_watch = True; continue
+        if nt in ["下側ゾーン", "上側ゾーン"]: continue
+        tags_norm.append(nt)
+    state = "要監視" if has_watch else (_norm_label(raw_state) or "観測中")
+    d["display_state"] = state
+    uniq = []
+    seen = set()
+    for t in tags_norm:
+        if t not in seen:
+            seen.add(t)
+            uniq.append(t)
+    d["tags"] = uniq
+    return d
+
+def _is_watch(item: dict) -> bool:
+    state = _norm_label(item.get("display_state", item.get("state", "")))
+    if "要監視" in state: return True
+    for tg in _tags_list(item.get("tags")):
+        if "要監視" in _norm_label(tg): return True
+    return False
+
 def get_logo_base64():
     try:
         with open("logo.png", "rb") as f:
             return base64.b64encode(f.read()).decode()
-    except:
-        return None
+    except: return None
 
 @st.cache_data(ttl=60)
 def load_data() -> Dict:
-    data_path = Path("data/ratios.json")
-    if data_path.exists():
-        with open(data_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+    p = Path("data/ratios.json")
+    if p.exists():
+        with open(p, "r", encoding="utf-8") as f: return json.load(f)
     return {}
 
-def get_fernet() -> Fernet:
-    return Fernet(st.secrets["encryption"]["key"].encode())
+def get_fernet() -> Fernet: return Fernet(st.secrets["encryption"]["key"].encode())
+def encrypt_password(pw: str) -> str: return get_fernet().encrypt(pw.encode()).decode() if pw else ""
+def decrypt_password(pw: str) -> str: 
+    try: return get_fernet().decrypt(pw.encode()).decode() if pw else ""
+    except: return ""
 
-def encrypt_password(password: str) -> str:
-    if not password: return ""
-    return get_fernet().encrypt(password.encode()).decode()
-
-def decrypt_password(encrypted_password: str) -> str:
-    if not encrypted_password: return ""
-    try:
-        return get_fernet().decrypt(encrypted_password.encode()).decode()
-    except:
-        return ""
-
-def get_gsheets_connection():
-    return st.connection("gsheets", type=GSheetsConnection)
+def get_gsheets_connection(): return st.connection("gsheets", type=GSheetsConnection)
 
 def load_settings_by_email(email: str) -> Optional[Dict]:
     if not email: return None
     try:
-        conn = get_gsheets_connection()
-        df = conn.read(worksheet="settings", usecols=[0, 1], ttl=0)
+        df = get_gsheets_connection().read(worksheet="settings", usecols=[0, 1], ttl=0)
         if df is None or df.empty: return None
         df.columns = ["email", "encrypted_password"]
         row = df[df["email"].str.lower().str.strip() == email.lower().strip()]
@@ -301,13 +243,11 @@ def load_settings_by_email(email: str) -> Optional[Dict]:
 
 def get_gspread_client():
     try:
-        creds_dict = dict(st.secrets["connections"]["gsheets"])
-        creds_dict.pop("spreadsheet", None)
-        creds_dict.pop("worksheet", None)
-        creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
+        cd = dict(st.secrets["connections"]["gsheets"])
+        cd.pop("spreadsheet", None); cd.pop("worksheet", None)
+        creds = Credentials.from_service_account_info(cd, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
         return gspread.authorize(creds)
-    except:
-        return None
+    except: return None
 
 def save_settings_to_sheet(email: str, app_password: str) -> bool:
     if not email: return False
@@ -316,25 +256,16 @@ def save_settings_to_sheet(email: str, app_password: str) -> bool:
         client = get_gspread_client()
         if not client: return False
         url = st.secrets["connections"]["gsheets"].get("spreadsheet")
-        worksheet = client.open_by_url(url).worksheet("settings")
+        ws = client.open_by_url(url).worksheet("settings")
         enc_pw = encrypt_password(app_password)
-        try: all_emails = worksheet.col_values(1)
+        try: all_emails = ws.col_values(1)
         except: all_emails = []
-        
-        row_index = -1
-        for i, ce in enumerate(all_emails):
-            if ce and ce.lower().strip() == email:
-                row_index = i + 1
-                break
-                
-        if row_index > 1:
-            worksheet.update_cell(row_index, 2, enc_pw)
-        else:
-            worksheet.append_row([email, enc_pw])
+        row_index = next((i + 1 for i, ce in enumerate(all_emails) if ce and ce.lower().strip() == email), -1)
+        if row_index > 1: ws.update_cell(row_index, 2, enc_pw)
+        else: ws.append_row([email, enc_pw])
         st.cache_data.clear()
         return True
-    except:
-        return False
+    except: return False
 
 def send_test_email(email: str, app_password: str) -> tuple[bool, str]:
     try:
@@ -347,8 +278,7 @@ def send_test_email(email: str, app_password: str) -> tuple[bool, str]:
             server.login(email, app_password)
             server.send_message(msg)
         return True, "テストメール送信成功！"
-    except Exception as e:
-        return False, f"送信エラー: {str(e)}"
+    except Exception as e: return False, f"送信エラー: {str(e)}"
 
 def format_volume_pct(v) -> str:
     if v is None: return "-"
@@ -356,8 +286,28 @@ def format_volume_pct(v) -> str:
         fv = float(v)
         if not np.isfinite(fv): return "-"
         return "<0.01%" if fv < 0.01 else f"{fv:.2f}%"
-    except:
-        return "-"
+    except: return "-"
+
+# ==========================================
+# 日本語銘柄名辞書
+# ==========================================
+TICKER_NAMES_JP = {
+    "3923.T": "ラクス", "4443.T": "Sansan", "4478.T": "フリー", "3994.T": "マネーフォワード",
+    "4165.T": "プレイド", "4169.T": "ENECHANGE", "4449.T": "ギフティ", "4475.T": "HENNGE",
+    "4431.T": "スマレジ", "4057.T": "インターファクトリー", "3697.T": "SHIFT", "4194.T": "ビジョナル",
+    "4180.T": "Appier", "3655.T": "ブレインパッド", "4751.T": "サイバーエージェント",
+    "3681.T": "ブイキューブ", "6035.T": "IRジャパン", "4384.T": "ラクスル", "9558.T": "ジャパニアス",
+    "4441.T": "トビラシステムズ", "6315.T": "TOWA", "6323.T": "ローツェ", "6890.T": "フェローテック",
+    "7735.T": "SCREENホールディングス", "6146.T": "ディスコ", "6266.T": "タツモ",
+    "3132.T": "マクニカホールディングス", "6920.T": "レーザーテック", "4565.T": "そーせいグループ",
+    "4587.T": "ペプチドリーム", "4582.T": "シンバイオ製薬", "4583.T": "カイオム・バイオ",
+    "4563.T": "アンジェス", "2370.T": "メディネット", "4593.T": "ヘリオス", "3064.T": "MonotaRO",
+    "3092.T": "ZOZO", "3769.T": "GMOペイメント", "4385.T": "メルカリ", "7342.T": "ウェルスナビ",
+    "4480.T": "メドレー", "6560.T": "LTS", "3182.T": "オイシックス", "9166.T": "GENDA",
+    "3765.T": "ガンホー", "3659.T": "ネクソン", "3656.T": "KLab", "3932.T": "アカツキ",
+    "4071.T": "プラスアルファ", "4485.T": "JTOWER", "7095.T": "Macbee Planet",
+    "4054.T": "日本情報クリエイト", "6095.T": "メドピア", "4436.T": "ミンカブ", "4477.T": "BASE",
+}
 
 # ==========================================
 # カード表示
@@ -369,18 +319,12 @@ def render_card(ticker: str, d: Dict):
     
     _state_clean = _norm_label(state) or str(state).strip()
     _tip = STATE_HELP.get(_state_clean, "状態の目安です。").replace('"', "&quot;")
-    if _state_clean == "要監視":
-        state_html = f'<span title="{_tip}" style="color:#5C6BC0;font-weight:800;">{_state_clean}</span>'
-    else:
-        state_html = f'<span title="{_tip}">{_state_clean}</span>'
+    state_html = f'<span title="{_tip}" style="color:#5C6BC0;font-weight:800;">{_state_clean}</span>' if _state_clean == "要監視" else f'<span title="{_tip}">{_state_clean}</span>'
 
     tags = d.get("tags", [])
-    if flow_score >= FLOW_SCORE_HIGH:
-        card_class, score_class = "high", "high"
-    elif flow_score >= FLOW_SCORE_MEDIUM:
-        card_class, score_class = "medium", "medium"
-    else:
-        card_class, score_class = "", "normal"
+    if flow_score >= FLOW_SCORE_HIGH: card_class, score_class = "high", "high"
+    elif flow_score >= FLOW_SCORE_MEDIUM: card_class, score_class = "medium", "medium"
+    else: card_class, score_class = "", "normal"
 
     level_color = LEVEL_COLORS.get(level, "#9E9E9E")
     code = ticker.replace(".T", "")
@@ -428,7 +372,6 @@ def render_card(ticker: str, d: Dict):
     </div>
     """, unsafe_allow_html=True)
 
-    # カート追加ボタン
     if ticker in st.session_state["cart"]:
         if st.button("🛒 カートから外す", key=f"cart_{ticker}", use_container_width=True):
             st.session_state["cart"].remove(ticker)
@@ -515,44 +458,47 @@ def show_main_page():
             with col3: st.markdown(f'<div class="stat-box"><div class="stat-value total">{len(display_data)}</div><div class="stat-label">表示件数</div></div>', unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # ツールバー（フィルター ＆ カート）
-            tb1, tb2, tb3 = st.columns([1.5, 1.5, 2.0])
+            tb1, tb2 = st.columns([2.0, 2.0])
             with tb1:
                 try:
-                    with st.popover("🔎 フィルター"):
+                    with st.popover("🔎 フィルターを開く"):
                         st.session_state["flt_query"] = st.text_input("検索", value=st.session_state.get("flt_query", ""))
                         st.session_state["flt_levels"] = st.multiselect("LEVEL", options=["4", "3", "2", "1"], default=st.session_state.get("flt_levels") or [])
                         st.session_state["flt_watch_only"] = st.toggle("要監視のみ", value=bool(st.session_state.get("flt_watch_only")))
                         if st.button("🔄 リセット", use_container_width=True):
                             st.session_state.update({"flt_levels": [], "flt_watch_only": False, "flt_query": ""})
                             st.rerun()
-                except:
-                    pass
+                except: pass
 
             with tb2:
-                cart = st.session_state.get("cart", [])
-                try:
-                    with st.popover(f"🛒 診断カート ({len(cart)}/5)"):
-                        if not cart:
-                            st.write("カートは空です")
-                        else:
-                            for c in cart: st.write(f"・ {c} （{TICKER_NAMES_JP.get(c, '')}）")
-                            if st.button("🗑 全削除", use_container_width=True):
-                                st.session_state["cart"] = []
-                                st.rerun()
-                            st.markdown("---")
-                            st.caption("※後日、戦略室への連携機能が追加されます")
-                            st.code(",".join(cart), language="text")
-                except:
-                    pass
-
-            with tb3:
                 chips = []
                 if st.session_state.get("flt_levels"): chips.append("LEVEL: " + ",".join(st.session_state["flt_levels"]))
                 if st.session_state.get("flt_watch_only"): chips.append("要監視のみ")
                 if chips: st.caption("適用中: " + " / ".join(chips))
 
+            # ==========================================
+            # カート（右下固定化ハック用アンカー）
+            # ==========================================
+            st.markdown('<div class="cart-anchor" style="display:none;"></div>', unsafe_allow_html=True)
+            
+            cart = st.session_state.get("cart", [])
+            try:
+                with st.popover(f"🛒 診断カート ({len(cart)}/5)"):
+                    if not cart:
+                        st.write("カートは空です")
+                    else:
+                        for c in cart: st.write(f"・ {c} （{TICKER_NAMES_JP.get(c, '')}）")
+                        if st.button("🗑 全削除", use_container_width=True):
+                            st.session_state["cart"] = []
+                            st.rerun()
+                        st.markdown("---")
+                        st.caption("※後日、戦略室への連携機能が追加されます")
+                        st.code(",".join(cart), language="text")
+            except: pass
+            
+            # ==========================================
             # フィルター適用
+            # ==========================================
             q = (st.session_state.get("flt_query") or "").strip().lower()
             levels = st.session_state.get("flt_levels") or []
             w_only = bool(st.session_state.get("flt_watch_only"))
@@ -563,6 +509,8 @@ def show_main_page():
                 if w_only and not _is_watch(it): continue
                 if q and q not in f"{tk} {(it.get('name') or '')}".lower(): continue
                 filtered_data[tk] = it
+
+            st.markdown("---")
 
             if filtered_data:
                 for ticker, d in sorted(filtered_data.items(), key=lambda x: (int(x[1].get('level',0)), float(x[1].get('flow_score',0))), reverse=True):
