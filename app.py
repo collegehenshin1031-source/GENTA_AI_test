@@ -6,8 +6,8 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - 診断カート機能（高齢者配慮UI、上限表示、件数表示対応）
 - 統計表示のスマート化
 - ハゲタカ診断エンジン（AI判定・チャート）の完全統合
-- 戦略カレンダーとサイドバーの移植（表示バグ修正版）
-- 右上のGitHubマーク・Forkボタンの完全非表示化
+- 戦略カレンダーとサイドバーの移植
+- 【修正】ヘッダーの白帯透明化 ＆ サイドバーボタン(>)の復活確保
 """
 
 import json
@@ -63,11 +63,27 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
 
-/* header全体を消すとサイドバーを開くボタンも消えてしまうので、邪魔なものだけ個別に消す */
-#MainMenu, footer, .stDeployButton {display: none !important;}
-/* ↓↓↓ これが右上のGitHub・Forkボタン等を完全に消し去る魔法の1行です ↓↓↓ */
-[data-testid="stToolbar"] {display: none !important;}
+/* =======================================
+   ヘッダーと右上の邪魔なボタンの処理
+   ======================================= */
+/* 1. 上部の白い帯（ヘッダー）を透明にして見えない壁を消す */
+header { background-color: transparent !important; }
 
+/* 2. 右上のGitHubやDeploy等のアイコン群を完全に消去 */
+[data-testid="stToolbar"] { display: none !important; }
+#MainMenu { display: none !important; }
+footer { display: none !important; }
+
+/* 3. 左上のサイドバー展開ボタン（＞）を強制的に最前面に出す */
+[data-testid="collapsedControl"] {
+    z-index: 999999 !important;
+    background-color: rgba(255, 255, 255, 0.7) !important;
+    border-radius: 8px !important;
+}
+
+/* =======================================
+   全体のベースデザイン
+   ======================================= */
 html, body, [class*="css"]  { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; }
 div[data-testid="stAppViewContainer"]{
   background: radial-gradient(1200px 600px at 10% 0%, rgba(92,107,192,0.10), transparent 60%),
