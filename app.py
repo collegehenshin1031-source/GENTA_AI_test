@@ -4,9 +4,10 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - 需給スコアによるM&A候補検知
 - ハゲタカ診断エンジン（AI判定・チャート）の完全統合
 - 戦略室のタブ移動＆スマホ対応カレンダー
-- 【改善】金融庁コンプライアンス対応（文言校正）
-- 【改善】カート操作の即時反映（コールバック化）
-- 【改善】カートボタンのUI強化（色分け・巨大化）
+- 金融庁コンプライアンス対応（文言校正）
+- カート操作の即時反映（コールバック化）
+- カートボタンのUI強化（色分け・巨大化）
+- 【UI改善】スマホ表示時のタブ崩れ防止＆スワイプ対応
 """
 
 import json
@@ -95,15 +96,42 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 /* ロゴ背景透過マジック */
 .logo-img { mix-blend-mode: multiply; }
 
-/* Tabs */
-.stTabs [data-baseweb="tab-list"]{
-  justify-content:center !important; background: rgba(255,255,255,0.75) !important; backdrop-filter: blur(8px);
-  padding: .35rem !important; border-radius: 14px !important; border: 1px solid rgba(15,23,42,0.08) !important;
-  box-shadow: 0 10px 30px rgba(15,23,42,0.06) !important; margin-bottom: 1.0rem !important;
+/* =======================================
+   Tabs (スマホ対応の安定化・スワイプ対応)
+   ======================================= */
+.stTabs [data-baseweb="tab-list"] {
+  display: flex !important;
+  flex-wrap: nowrap !important; /* 折り返しを強制ブロック */
+  overflow-x: auto !important; /* スマホで入り切らない場合は横スクロール */
+  -webkit-overflow-scrolling: touch !important;
+  justify-content: flex-start !important; /* 左端が切れるバグを防止 */
+  background: rgba(255,255,255,0.85) !important;
+  backdrop-filter: blur(8px);
+  padding: 0.35rem !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(15,23,42,0.08) !important;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
+  margin-bottom: 1.0rem !important;
+  gap: 0.3rem !important;
 }
-.stTabs [data-baseweb="tab"]{ padding: .55rem 1.05rem !important; border-radius: 10px !important; font-weight: 700 !important; color: #475569 !important; }
-.stTabs [data-baseweb="tab"][aria-selected="true"]{ background: linear-gradient(135deg, #0F172A 0%, #334155 100%) !important; }
-.stTabs [data-baseweb="tab"][aria-selected="true"] p{ color: #FFFFFF !important; }
+/* スクロールバーはダサいので隠す */
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none !important; }
+
+.stTabs [data-baseweb="tab"] {
+  flex: 1 1 0 !important; /* PCでは均等割付 */
+  min-width: max-content !important; /* 中の文字が潰れるのを絶対に防ぐ */
+  padding: 0.6rem 0.8rem !important;
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+  color: #475569 !important;
+  justify-content: center !important;
+}
+.stTabs [data-baseweb="tab"] p {
+  white-space: nowrap !important; /* 文字の改行を強制ブロック */
+  margin: 0 !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] { background: linear-gradient(135deg, #0F172A 0%, #334155 100%) !important; }
+.stTabs [data-baseweb="tab"][aria-selected="true"] p { color: #FFFFFF !important; }
 
 /* Cards */
 .spike-card{
@@ -178,7 +206,7 @@ div.stButton > button[data-testid="baseButton-primary"] {
     padding: 0.8rem 1rem; margin: 1.5rem 0 1rem 0; font-size: 0.75rem; color: #475569; line-height: 1.5;
 }
 
-/* 免責同意ボタンの発光アニメーション（強制上書き） */
+/* 免責同意ボタンの発光アニメーション */
 @keyframes redPulse {
     0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.8); }
     70% { box-shadow: 0 0 0 15px rgba(220, 38, 38, 0); }
@@ -464,7 +492,6 @@ def evaluate_stock(ticker):
             except:
                 jp_name = info.get('longName', TICKER_NAMES_JP.get(ticker, ticker))
 
-        # コンプライアンス対策：マイルドな名称に変更
         if market_cap_oku >= 5000:
             cap_category = "large"
             intervention_name = "🏢 機関投資家・大口流入期待度"
