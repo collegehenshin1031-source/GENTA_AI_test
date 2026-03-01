@@ -226,13 +226,26 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
 
-/* Streamlit特有の邪魔なボタンや透かしを完全非表示にする */
-.stDeployButton {display: none !important;}
-#MainMenu {visibility: hidden !important;}
-header {visibility: hidden !important;}
-footer {visibility: hidden !important;}
-div[data-testid="stViewerBadge"] {display: none !important;}
-div[data-testid="manage-app-button"] {display: none !important;}
+/* =======================================
+   診断カートを右下に固定し、邪魔なアイコンを物理的に踏み潰す
+   ======================================= */
+div[data-testid="stPopover"]:has(p:contains("診断カート")) {
+    position: fixed !important;
+    bottom: 10px !important;
+    right: 15px !important;
+    z-index: 999999 !important; /* 常に一番手前に表示 */
+    background: #ffffff !important;
+    border-radius: 12px !important;
+    box-shadow: 0px 5px 25px rgba(0,0,0,0.4) !important;
+}
+
+/* 覆い隠す面積を広げるため、ボタン自体を少し大きく太くする */
+div[data-testid="stPopover"]:has(p:contains("診断カート")) > button {
+    padding: 0.8rem 1.8rem !important;
+    border: 2px solid #0F172A !important;
+    background: #ffffff !important;
+}
+
 
 </style>
 """, unsafe_allow_html=True)
