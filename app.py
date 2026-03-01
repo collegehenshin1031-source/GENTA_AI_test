@@ -1,13 +1,12 @@
 """
 HAGETAKA SCOPE - M&A候補検知ツール
-- ログイン画面のスタイリッシュ化（タブ分け、ロゴ透過）
+- ログイン画面のスタイリッシュ化
 - 需給スコアによるM&A候補検知
-- 通知設定の登録・変更・削除（Google Sheets永続化）
-- 診断カート機能（高齢者配慮UI、上限表示、件数表示対応）
-- 統計表示のスマート化
 - ハゲタカ診断エンジン（AI判定・チャート）の完全統合
-- ヘッダーの白帯透明化 ＆ サイドバーボタン(>)の復活確保
-- 【UX改善】戦略室のタブ移動＆スマホ対応カレンダー、指標解説の追加
+- 戦略室のタブ移動＆スマホ対応カレンダー
+- 【改善】金融庁コンプライアンス対応（文言校正）
+- 【改善】カート操作の即時反映（コールバック化）
+- 【改善】カートボタンのUI強化（色分け・巨大化）
 """
 
 import json
@@ -55,6 +54,20 @@ MASTER_PASSWORD = "88888"
 DISCLAIMER_TEXT = "本ツールは市場データの可視化を目的とした補助ツールです。<br>銘柄推奨・売買助言ではありません。最終判断は利用者ご自身で行ってください。"
 
 # ==========================================
+# カート操作のコールバック関数（即時反映用）
+# ==========================================
+def clear_cart():
+    st.session_state["cart"] = []
+
+def add_to_cart(ticker):
+    if ticker not in st.session_state.get("cart", []):
+        st.session_state["cart"].append(ticker)
+
+def remove_from_cart(ticker):
+    if ticker in st.session_state.get("cart", []):
+        st.session_state["cart"].remove(ticker)
+
+# ==========================================
 # UI設定・CSS
 # ==========================================
 st.set_page_config(page_title="源太AI🤖ハゲタカSCOPE", page_icon="🦅", layout="wide", initial_sidebar_state="collapsed")
@@ -63,16 +76,12 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
 
-/* =======================================
-   ヘッダー完全消去（GitHub・Fork等の根絶）
-   ======================================= */
+/* ヘッダー完全消去 */
 header { visibility: hidden !important; display: none !important; }
 #MainMenu, footer, .stDeployButton { display: none !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
-/* =======================================
-   全体のベースデザイン
-   ======================================= */
+/* 全体のベースデザイン */
 html, body, [class*="css"]  { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; }
 div[data-testid="stAppViewContainer"]{
   background: radial-gradient(1200px 600px at 10% 0%, rgba(92,107,192,0.10), transparent 60%),
@@ -135,7 +144,33 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .stat-value.total{ color:#0F172A; }
 .stat-label{ color:#64748B; font-size:.78rem; font-weight:700; margin-top:.25rem; }
 
+/* ボタンの共通角丸 */
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
+
+/* 🛒 カートに入れる等の青系メインボタン（Primary） */
+div.stButton > button[data-testid="baseButton-primary"] {
+    background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%) !important;
+    color: white !important;
+    border: none !important;
+    box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3) !important;
+}
+
+/* 巨大化させる診断カートのプルダウンボタン専用スタイル */
+.cart-popover-container [data-testid="stPopover"] > button {
+    background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.8rem 1rem !important;
+    font-size: 1.15rem !important;
+    font-weight: 800 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4) !important;
+    transition: all 0.2s ease !important;
+}
+.cart-popover-container [data-testid="stPopover"] > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5) !important;
+}
 
 /* 免責事項ボックスのスタイル */
 .disclaimer-box {
@@ -143,7 +178,7 @@ div.stButton > button{ border-radius: 12px !important; font-weight: 800 !importa
     padding: 0.8rem 1rem; margin: 1.5rem 0 1rem 0; font-size: 0.75rem; color: #475569; line-height: 1.5;
 }
 
-/* 免責同意ボタンの発光アニメーション */
+/* 免責同意ボタンの発光アニメーション（強制上書き） */
 @keyframes redPulse {
     0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.8); }
     70% { box-shadow: 0 0 0 15px rgba(220, 38, 38, 0); }
@@ -429,15 +464,16 @@ def evaluate_stock(ticker):
             except:
                 jp_name = info.get('longName', TICKER_NAMES_JP.get(ticker, ticker))
 
+        # コンプライアンス対策：マイルドな名称に変更
         if market_cap_oku >= 5000:
             cap_category = "large"
             intervention_name = "🏢 機関投資家・大口流入期待度"
         elif market_cap_oku >= 50:
             cap_category = "target"
-            intervention_name = "🦅 ハゲタカ介入期待度"
+            intervention_name = "🦅 大口資金・介入期待度 (目安)"
         else:
             cap_category = "small"
-            intervention_name = "⚠️ イナゴマネー過熱度 (超小型)"
+            intervention_name = "⚠️ 短期資金・過熱度 (超小型)"
 
         hist_6mo = hist.tail(125)
         price_bins = pd.cut(hist_6mo['Close'], bins=15)
@@ -530,10 +566,11 @@ def evaluate_stock(ticker):
         star_desc = selected_pattern[0]
         base_logic = selected_pattern[1]
 
+        # コンプライアンス対策：マイルドな名称に変更
         flavor_logic = ""
-        if cap_category == "large": flavor_logic = "時価総額が巨大なため『仕手筋の急騰仕掛け』は入りませんが、機関投資家や外国人投資家の資金流入をエンジンとした、強力で重厚なトレンドが期待できます。"
-        elif cap_category == "target": flavor_logic = "ハゲタカが最も好む規模感であり、彼らが資金を投下すれば一気に株価が吹き飛ぶ（または壁を突破する）ポテンシャルを秘めています。"
-        else: flavor_logic = "※ただし時価総額が小さすぎるため、プロは資金を入れづらい銘柄です。主に個人マネーによる『マネーゲーム（乱高下）』になりやすいため、ロットを落とした短期勝負に限定してください。"
+        if cap_category == "large": flavor_logic = "時価総額が巨大なため値動きは重めですが、機関投資家や外国人投資家の資金流入をエンジンとした、強力で重厚なトレンドが期待できます。"
+        elif cap_category == "target": flavor_logic = "中小型株として大口資金が最も好む規模感であり、資金が投下されれば一気に株価が動意づく（または壁を突破する）ポテンシャルを秘めています。"
+        else: flavor_logic = "※ただし時価総額が小さすぎるため、プロは資金を入れづらい銘柄です。主に個人投資家による短期的な値幅取りの対象（乱高下）になりやすいため、リスク管理を徹底してください。"
 
         star_logic = base_logic + "<br><br>" + flavor_logic
 
@@ -578,10 +615,11 @@ def evaluate_stock(ticker):
         intervention_score = int(round(min(intervention_score, 100) / 10.0)) * 10
         intervention_score = max(10, min(intervention_score, 90))
         
+        # コンプライアンス対策：マイルドな文言
         intervention_comment = ""
-        if intervention_score >= 80: intervention_comment = "🚨 【極めて濃厚】大口（機関 investment）の介入シグナルが点灯！"
-        elif intervention_score >= 50: intervention_comment = "👀 【予兆あり】水面下で玉（ぎょく）が集められている可能性があります."
-        else: intervention_comment = "💤 【静観】現在は目立った大口の動きは検出されません."
+        if intervention_score >= 80: intervention_comment = "🚨 【極めて濃厚】大規模な資金流入のシグナルが点灯しています。"
+        elif intervention_score >= 50: intervention_comment = "👀 【予兆あり】平常時とは異なる資金の動きが観測されています。"
+        else: intervention_comment = "💤 【静観】現在は目立った資金流入の動きは検出されていません。"
 
         base_rank = "D"
         if intervention_score >= 80 and (is_blue_sky or upside_potential >= 30): base_rank = "S"
@@ -701,19 +739,19 @@ def render_card(ticker: str, d: Dict):
     </div>
     """, unsafe_allow_html=True)
 
-    cart_len = len(st.session_state["cart"])
-    if ticker in st.session_state["cart"]:
-        btn_text = f"🛒 診断カートから外す ({cart_len}/5)"
-        if st.button(btn_text, key=f"cart_{ticker}", use_container_width=True):
-            st.session_state["cart"].remove(ticker)
-            st.rerun()
+    # 🛒 カートボタンの表示（コールバックで即時反映）
+    cart_list = st.session_state.get("cart", [])
+    cart_len = len(cart_list)
+    
+    if ticker in cart_list:
+        btn_text = f"🗑️ 診断カートから外す ({cart_len}/5)"
+        # 外すボタンは secondary (通常色・白)
+        st.button(btn_text, key=f"cart_rm_{ticker}", use_container_width=True, on_click=remove_from_cart, args=(ticker,))
     else:
         is_full = cart_len >= 5
         btn_text = "🛒 カートの上限に達しました (5/5)" if is_full else f"🛒 診断カートに入れる ({cart_len}/5)"
-        if st.button(btn_text, key=f"cart_{ticker}", use_container_width=True, disabled=is_full):
-            if not is_full:
-                st.session_state["cart"].append(ticker)
-                st.rerun()
+        # 入れるボタンは primary (青系)
+        st.button(btn_text, key=f"cart_add_{ticker}", use_container_width=True, disabled=is_full, type="primary", on_click=add_to_cart, args=(ticker,))
 
 # ==========================================
 # 画面遷移
@@ -734,26 +772,10 @@ def show_login_page():
             
         tab1, tab2 = st.tabs(["🔑 アプリを利用する", "⚙️ 通知設定の呼び出し"])
         
-        # --- アプリを利用する（共通パスワード） ---
         with tab1:
-            st.markdown("""
-            <div style="text-align:center; padding: 1rem 0 0 0;">
-                <p style="color:#666; font-size:0.85rem; margin-bottom: 0.5rem;">共通パスワードを入力して候補一覧を閲覧します</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
+            st.markdown("<div style='text-align:center; padding: 1rem 0 0 0;'><p style='color:#666; font-size:0.85rem; margin-bottom: 0.5rem;'>共通パスワードを入力して候補一覧を閲覧します</p></div>", unsafe_allow_html=True)
             pw_input = st.text_input("パスワード", placeholder="共通パスワードを入力", type="password", key="login_pw")
-            
-            st.markdown(f"""
-            <div class="disclaimer-box">
-                <strong>⚠️ 免責事項</strong><br>
-                {DISCLAIMER_TEXT}
-            </div>
-            <div style="text-align:center; margin-bottom: 10px;">
-                <span style="font-size: 0.8rem; font-weight: bold; color: #DC2626;">※ログインすることで上記に同意したものとみなします。</span>
-            </div>
-            """, unsafe_allow_html=True)
-
+            st.markdown(f'<div class="disclaimer-box"><strong>⚠️ 免責事項</strong><br>{DISCLAIMER_TEXT}</div><div style="text-align:center; margin-bottom: 10px;"><span style="font-size: 0.8rem; font-weight: bold; color: #DC2626;">※ログインすることで上記に同意したものとみなします。</span></div>', unsafe_allow_html=True)
             if st.button("ログインして利用開始", use_container_width=True, type="primary"):
                 if pw_input == MASTER_PASSWORD:
                     st.cache_data.clear()
@@ -763,32 +785,16 @@ def show_login_page():
                     st.session_state["login_error"] = True
                     st.rerun()
                     
-        # --- 登録情報の呼び出し（メアド） ---
         with tab2:
-            st.markdown("""
-            <div style="text-align:center; padding: 1rem 0;">
-                <p style="color:#666; font-size:0.85rem; margin-bottom: 1rem;">登録済みのメールアドレスを入力して、<br>通知先や設定を変更・停止します</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
+            st.markdown("<div style='text-align:center; padding: 1rem 0;'><p style='color:#666; font-size:0.85rem; margin-bottom: 1rem;'>登録済みのメールアドレスを入力して、<br>通知先や設定を変更・停止します</p></div>", unsafe_allow_html=True)
             email_input = st.text_input("登録済みメールアドレス", placeholder="example@gmail.com", key="login_email")
-            
-            st.markdown(f"""
-            <div class="disclaimer-box" style="margin-top:0.5rem;">
-                <strong>⚠️ 免責事項</strong><br>
-                {DISCLAIMER_TEXT}
-            </div>
-            """, unsafe_allow_html=True)
-
+            st.markdown(f'<div class="disclaimer-box" style="margin-top:0.5rem;"><strong>⚠️ 免責事項</strong><br>{DISCLAIMER_TEXT}</div>', unsafe_allow_html=True)
             if st.button("設定を呼び出す（同意して進む）", use_container_width=True):
                 try:
                     settings = load_settings_by_email(email_input)
                     if settings:
                         st.cache_data.clear()
-                        st.session_state.update({
-                            "logged_in": True, "login_error": False, "login_type": "email", 
-                            "email_address": settings["email"], "app_password": decrypt_password(settings["encrypted_password"])
-                        })
+                        st.session_state.update({"logged_in": True, "login_error": False, "login_type": "email", "email_address": settings["email"], "app_password": decrypt_password(settings["encrypted_password"])})
                         st.rerun()
                     else:
                         st.session_state["login_error"] = True
@@ -810,22 +816,22 @@ def show_main_page():
     tab1, tab2, tab3 = st.tabs(["📊 M&A候補", "🦅 ハゲタカ診断", "🔔 通知設定"])
     
     # ==========================================
-    # タブ1: M&A候補（＋指標の解説）
+    # タブ1: M&A候補
     # ==========================================
     with tab1:
-        # 💡 M&A候補用の解説プルダウン
+        # 💡 【コンプライアンス対応】LEVELと需給スコアの解説
         with st.expander("💡 LEVELと需給スコアの見方", expanded=False):
             st.markdown("""
             **■ LEVEL（0〜4）**
-            総合的な「ポテンシャル（時価総額やPBR）」と「タイミング（決算や資金流入）」の合算評価です。
-            * **LEVEL 4 (赤)** : 全ての条件が重なった極めて稀な激アツ状態。
-            * **LEVEL 3 (橙)** : 強い資金流入と再編の素地が整っている状態。
-            * **LEVEL 2 (黄)** : 変化の兆しが明確に見え始めた状態。
+            時価総額やPBRなどの「財務的特徴」と、決算や出来高などの「市場データ変化」に基づく独自基準の合算評価です。
+            * **LEVEL 4 (赤)** : 複数の抽出条件を同時に満たす、データ上の特異性が高い状態。
+            * **LEVEL 3 (橙)** : 一定の出来高変化と、特徴的な財務指標が観測される状態。
+            * **LEVEL 2 (黄)** : 平常時とは異なる、何らかのデータ変化が観測された状態。
             
             **■ 需給スコア（0〜100）**
-            直近の「出来高急増」や「底値圏での煮詰まり」など、水面下で集められている**資金流入の強さ**を示す独自の数値です。
-            * **70以上 (赤)** : 明確な大口の介入シグナルが点灯している状態。
-            * **40以上 (橙)** : いつ動き出してもおかしくない熱を帯びている状態。
+            直近の「出来高の急増」や「価格変動の幅」などから、市場における取引の活発化度合いを数値化した独自の指標です。
+            * **70以上 (赤)** : 過去の平均と比較して、非常に強い出来高変化のシグナルが点灯している状態。
+            * **40以上 (橙)** : 平常時よりも商いが膨らみ、市場の関心を集めていると推測される状態。
             """)
 
         if data:
@@ -860,16 +866,13 @@ def show_main_page():
             </div>
             """, unsafe_allow_html=True)
 
-            tb1, tb2 = st.columns([2.0, 2.0])
+            # 🛠 カートボタンを大きく見せるためにカラム比率を [1.0, 1.5] に変更
+            tb1, tb2 = st.columns([1.0, 1.5])
             with tb1:
                 try:
                     with st.popover("🔎 フィルターを開く"):
                         st.session_state["flt_query"] = st.text_input("検索", value=st.session_state.get("flt_query", ""))
-                        level_opt = st.selectbox(
-                            "LEVEL絞り込み", 
-                            options=["すべて", "LEVEL 4 のみ", "LEVEL 3 以上", "LEVEL 2 以上", "LEVEL 1 以上"],
-                            index=0
-                        )
+                        level_opt = st.selectbox("LEVEL絞り込み", options=["すべて", "LEVEL 4 のみ", "LEVEL 3 以上", "LEVEL 2 以上", "LEVEL 1 以上"], index=0)
                         st.session_state["flt_level_select"] = level_opt
                         st.session_state["flt_watch_only"] = st.toggle("要監視のみ", value=bool(st.session_state.get("flt_watch_only")))
                         if st.button("🔄 リセット", use_container_width=True):
@@ -878,19 +881,19 @@ def show_main_page():
                 except: pass
 
             with tb2:
-                cart = st.session_state.get("cart", [])
-                try:
-                    with st.popover(f"🛒 診断カート ({len(cart)}/5)"):
-                        if not cart:
-                            st.write("カートは空です")
-                        else:
-                            for c in cart: st.write(f"・ {c} （{TICKER_NAMES_JP.get(c, '')}）")
-                            if st.button("🗑 全削除", use_container_width=True):
-                                st.session_state["cart"] = []
-                                st.rerun()
-                            st.markdown("---")
-                            st.caption("※『ハゲタカ診断』タブを開くと自動で入力されます。")
-                except: pass
+                # 🛒 診断カート（即時反映のコールバック＆巨大化CSS適用）
+                st.markdown('<div class="cart-popover-container">', unsafe_allow_html=True)
+                with st.popover(f"🛒 診断カートを開く ({len(st.session_state.get('cart', []))}/5)", use_container_width=True):
+                    cart = st.session_state.get("cart", [])
+                    if not cart:
+                        st.write("カートは空です")
+                    else:
+                        for c in cart: st.write(f"・ {c} （{TICKER_NAMES_JP.get(c, '')}）")
+                        # 2回押しバグ解消：on_clickを利用
+                        st.button("🗑 全削除", use_container_width=True, on_click=clear_cart)
+                        st.markdown("---")
+                        st.caption("※『ハゲタカ診断』タブを開くと自動で入力されます。")
+                st.markdown('</div>', unsafe_allow_html=True)
 
             st.markdown("")
             chips = []
@@ -930,38 +933,38 @@ def show_main_page():
     with tab2:
         st.markdown("### 🦅 ハゲタカAI 診断室")
         
-        # 🦅 スマホ対応の戦略室（タブの中に配置し、操作性を担保）
+        # 🦅 【UX改善】スマホ対応の戦略室（タブの中に配置し、popoverを廃止してアコーディオンに）
         with st.expander("🦅 ハゲタカ戦略室（記号の解説 ＆ 相場カレンダー）を開く", expanded=False):
             strat_tab1, strat_tab2 = st.tabs(["🦅 記号の解説", "📅 2026年 戦略カレンダー"])
             
             with strat_tab1:
                 st.markdown("""
                 <ul style='font-size: 0.9rem; line-height: 1.6; color: #333; margin-top: 10px;'>
-                    <li style='margin-bottom: 8px;'><b>💎 プラチナ (Platinum)</b><br>時価総額 <b>500億～2000億円</b><br><span style='color: #64748B;'>ハゲタカが最も仕掛けやすい黄金サイズ。</span></li>
-                    <li style='margin-bottom: 8px;'><b>🦅 ハゲタカ参戦？</b><br>出来高急増（平常時の1.5倍以上）<br><span style='color: #64748B;'>水面下での「仕込み」疑惑あり。</span></li>
-                    <li><b>🧬 DNA（習性）</b><br>過去に短期間で急騰した実績あり。<br><span style='color: #64748B;'>「主（ぬし）」が住み着いている可能性あり。</span></li>
+                    <li style='margin-bottom: 8px;'><b>💎 プラチナ (Platinum)</b><br>時価総額 <b>500億～2000億円</b><br><span style='color: #64748B;'>大口資金が最も仕掛けやすいとされる規模感。</span></li>
+                    <li style='margin-bottom: 8px;'><b>🦅 大口資金参入？</b><br>出来高急増（平常時の1.5倍以上）<br><span style='color: #64748B;'>水面下での「仕込み」が疑われる状態。</span></li>
+                    <li><b>🧬 DNA（習性）</b><br>過去に短期間で急騰した実績あり。<br><span style='color: #64748B;'>値動きを主導する特定の資金が存在する可能性あり。</span></li>
                 </ul>
                 """, unsafe_allow_html=True)
                 
             with strat_tab2:
                 current_month = datetime.now(JST).month
                 strategy_text = {
-                    1: "⚠️ **1月：資金温存**\n外国人買いが入りますが、3月の暴落に備えて現金比率を高めましょう。",
+                    1: "⚠️ **1月：資金温存**\n外国人買いが入りますが、3月の調整に備えて現金比率を高めましょう。",
                     2: "⚠️ **2月：様子見**\n無理に動く時期ではありません。監視銘柄の選定に集中。",
-                    3: "📉 **3月：換金売り警戒＆仕込み**\n中旬の暴落は「優良株」を拾う最大のチャンス！",
-                    4: "🔥 **4月：ニューマネー流入**\n新年度予算で中小型株が吹き上がります。3月の仕込みを利益に。",
-                    5: "🔥 **5月：セルインメイは嘘**\n決算後の「材料出尽くし」急落は、ハゲタカの集め場です。",
+                    3: "📉 **3月：換金売り警戒＆仕込み**\n中旬の調整は「優良株」を拾う最大のチャンス！",
+                    4: "🔥 **4月：ニューマネー流入**\n新年度予算で中小型株が動意づきます。3月の仕込みを利益に。",
+                    5: "🔥 **5月：セルインメイの裏をかく**\n決算後の「材料出尽くし」による下落は、資金集めの好機です。",
                     6: "💰 **6月：ボーナス・配当再投資**\n資金潤沢. 大型株へシフトする時期。",
                     7: "💰 **7月：サマーラリー**\n夏枯れ前の最後のひと稼ぎ。",
-                    8: "🌊 **8月：夏枯れ・真空地帯**\nハゲタカ不在. AIによるフラッシュクラッシュ（急落）のみ警戒。",
+                    8: "🌊 **8月：夏枯れ・真空地帯**\n市場参加者不在. AIによるフラッシュクラッシュ（急落）のみ警戒。",
                     9: "📉 **9月：彼岸底**\n10月の大底に向けた調整。",
                     10: "🔥 **10月：年内最後の大底**\nここから年末ラリーへ. 全力買いの急所。",
-                    11: "🍂 **11月：節税売り（タックスロス）**\n投げ売りされた銘柄を拾う。",
+                    11: "🍂 **11月：節税売り（タックスロス）**\n手仕舞い売りされた銘柄を拾う。",
                     12: "🎉 **12月：掉尾の一振**\n年末ラリーで全てを利益に変えて逃げ切る。"
                 }
                 st.info(f"**今月の戦略 ({current_month}月)：**\n{strategy_text.get(current_month, '戦略待機中')}")
                 
-                # popoverを廃止し、そのまま下に全月を列挙（スマホで安全）
+                # popoverを廃止し、そのまま下に全月を列挙（スマホで安全・閉じづらさ解消）
                 with st.expander("年間カレンダーをすべて見る"):
                     for m, text in strategy_text.items():
                         if m == current_month:
@@ -969,20 +972,21 @@ def show_main_page():
                         else:
                             st.markdown(text)
 
+        # 💡 【コンプライアンス対応】診断ロジックの解説
         with st.expander("🔰 【源太AI・各項目の見方と算出ロジック】"):
             st.markdown("""
-            #### ① 🦅 介入期待度（％メーター）
-            **「今、大口投資家がこの株を狙っている可能性」**を示します. (軽すぎず重すぎない規模、異常出来高、底値煮詰まり、急騰DNAから算出).
+            #### ① 🦅 大口介入期待度（％メーター）
+            **「市場の関心がこの銘柄に向かっている可能性」**をデータから推測します。(時価総額の規模、異常出来高、値動きの煮詰まり、過去のボラティリティ等から算出)。
             
             #### ② 🌟 上値の需給の壁までの余地（★マーク）
-            **「上値の需給の壁までどれくらい上昇する余地があるか」**を示します. 星が多いほど邪魔者がおらずスルスル上がりやすい「お宝状態」と言えます.
+            **「過去の取引が多く行われた価格帯（需給の壁）までの距離」**を示します。星が多いほど、直近で戻り売り（ヤレヤレ売り）が出やすい価格帯までの余地があることを意味します。
             
             #### ③ 🚧 安全性（壁からの乖離と撤退ライン）
-            **「現在値が『最大の需給の壁』から何%離れているか」**を示します. マイナス圏は壁の下にある「割安圏」であり、直近底値（青の点線）を絶対の撤退ラインとして勝負できる優位性の高いポイントです.
+            **「現在値が『最大の需給の壁』から何%離れているか」**を示します。マイナス圏は壁の下にある状態であり、直近底値（青の点線）をリスク管理の目安（撤退ライン）として活用できるポイントです。
             
             #### ④ 📊 チャート ＆ 価格帯別出来高（右側の横棒）
-            チャートの右側は、**過去半年間で「どの価格帯でどれだけ取引されたか」**を表します. 一番棒が長いオレンジの点線が**『強力な岩盤（需給の壁）』**です.
-            <span style='color: #ffaa00; font-weight: bold;'>⚠️注意: オレンジの線を下回った場合は、含み損を抱えた投資家の「パニック売り（投げ売り）」が出やすくなるため、割ってはならない『下値支持線』としての目安にもなります。</span>
+            チャートの右側は、**過去半年間で「どの価格帯でどれだけ取引されたか」**を表します。一番棒が長いオレンジの点線が**『最も取引が密集した価格帯（需給の壁）』**です。
+            <span style='color: #ffaa00; font-weight: bold;'>⚠️注意: オレンジの線を下回っている場合は、含み損を抱えた投資家の戻り売り圧力が警戒されるため、直近底値などの『下値支持線』を意識したリスク管理が重要です。</span>
             """, unsafe_allow_html=True)
             
         cart_codes = [code.replace(".T", "") for code in st.session_state.get("cart", [])]
@@ -1024,11 +1028,11 @@ def show_main_page():
                                     
                                     with st.expander("💡 総合判定の基準を見る"):
                                         st.markdown("""
-                                        * **【Sランク】** 大口介入期待度80%以上 ＋ 上昇期待値(上昇余地)30%以上
-                                        * **【Aランク】** 大口介入期待度70%以上（資金流入の強いサイン点灯）
-                                        * **【Bランク】** 大口介入期待度50%以上、または プラチナサイズ(500〜2000億) ＋ 底値圏(50%以下)で煮詰まり
+                                        * **【Sランク】** 大口介入期待度80%以上 ＋ 上昇期待値(上値余地)30%以上
+                                        * **【Aランク】** 大口介入期待度70%以上（強い資金流入シグナル）
+                                        * **【Bランク】** 大口介入期待度50%以上、または プラチナサイズ(500〜2000億) ＋ 底値圏での煮詰まり
                                         * **【Cランク】** 上記以外の標準的な状態
-                                        * **【注意】** 需給の壁から20%以上乖離している場合、安全面のアラートが表示されます
+                                        * **【注意】** 需給の壁から20%以上乖離している場合、過熱感のアラートが表示されます
                                         """)
 
                                     st.write(f"現在値: **{diag_data['現在値']}** 円")
@@ -1038,15 +1042,15 @@ def show_main_page():
                                     
                                     with st.expander("💡 商い熱量（株式回転率）とは？"):
                                         st.markdown("""
-                                        **商い熱量 ＝ 出来高が総発行株数の何％にあたるか（株式回転率・商い率）**
-                                        この数値は「本物の大口（ハゲタカ）」の介入や、株価が動く「本当のエネルギー」を見極めるための最重要シグナルのひとつです。
+                                        **商い熱量 ＝ 出来高が総発行株数の何％にあたるか（株式回転率）**
+                                        この数値は、株価が動く「エネルギーの大きさ」を見極めるための重要なテクニカル指標です。
                                         
-                                        * **① 「本物の大口」か「ノイズ」かの見極め**
-                                          前日比で出来高が3倍に増えていても、それが発行済株数の「0.1%」に過ぎなければ、単なる個人の小競り合いに過ぎません。しかし、1日で「5%」や「10%」が取引されていたら、それは巨大な資金が明確に介入し、株主構成が変わるほどの「大相場」の初動（または終焉）の可能性を示唆します。
-                                        * **② 「浮フラ株」の買い占め（主の住み着き）察知**
-                                          発行済株数の中には、親会社などが保有し市場に出回らない「固定株」が多数あります。つまり、発行済株数の5%の出来高があったということは、実際に市場に出回っている株（浮動株）の15%〜20%近くがたった1日で入れ替わった計算になります。これこそが、銘柄に「主（ぬし）」が住み着いた瞬間の熱量と言えます。
-                                        * **③ 需給の壁（しこり玉）を突破するエネルギー判定**
-                                          上値に分厚い壁（含み損の売り圧力）があったとしても、この商い熱量が異常に高ければ、「ヤレヤレ売りを全部買いのめしてでも上に持っていく」という新勢力の強大なパワーの裏付けとなります。
+                                        * **① 資金流入の規模感の把握**
+                                          前日比で出来高が増えていても、発行済株数に対してごくわずかであれば限定的な動きです。しかし、1日で「5%」や「10%」が取引されていたら、明確な資金介入と株主構成の変化を伴う大きなトレンドの初動（または終焉）の可能性を示唆します。
+                                        * **② 流動性（浮動株）の消化具合**
+                                          発行済株数の中には、市場に出回らない「固定株」があります。発行済株数の5%の出来高があったということは、実際に市場に出回っている株（浮動株）の10%〜20%が1日で入れ替わった計算になり、極めて活発な商いと言えます。
+                                        * **③ 需給の壁（戻り売り）の突破力**
+                                          上値に過去の取引が密集する壁（戻り売り圧力）があったとしても、この商い熱量が異常に高ければ、その売り圧力を吸収して上昇するだけのエネルギーが市場に存在することの裏付けとなります。
                                         """)
                                     
                                     st.markdown("---")
@@ -1072,9 +1076,9 @@ def show_main_page():
                                     with st.expander("💡 安全性（壁からの乖離と撤退ライン）の見方を見る"):
                                         safe_explain_html = f"""
                                         <div style='color: #475569; font-size: 0.95rem; line-height: 1.6;'>
-                                        当ツールでは、安全性を<strong>「最大の需給の壁（オレンジの点線）」からの乖離率（％）</strong>で判定するように進化しました。<br>
-                                        マイナス圏（壁より下）は過去のしこり玉を恐れて一般投資家が手を出せない「割安圏」であり、ハゲタカが水面下で仕込む絶好のポイントです。<br><br>
-                                        <span style='color: #4b8bff; font-weight: bold;'>【🛡️プロの撤退ルール】マイナス圏で仕込む場合は、直近の底値（青の点線）を下回ったら「シナリオ崩れ」として潔く撤退（損切り）することで、大怪我を防ぐことができます。</span><br><br>
+                                        当ツールでは、安全性を<strong>「最大の需給の壁（オレンジの点線）」からの乖離率（％）</strong>で判定します。<br>
+                                        マイナス圏（壁より下）は過去のしこり玉を恐れて一般投資家が手を出せない「割安圏」であり、大口資金が水面下で仕込むポイントになりやすいです。<br><br>
+                                        <span style='color: #4b8bff; font-weight: bold;'>【🛡️プロのリスク管理】マイナス圏で仕込む場合は、直近の底値（青の点線）を下回ったら「シナリオ崩れ」として撤退（損切り）を検討することで、大きな損失を防ぐ目安となります。</span><br><br>
                                         <strong>【AIの判定基準一覧】</strong><br>
                                         ・<strong>-5.0%以下 【📉 割安】</strong> 底値仕込みが適切とされるゾーン（任意）<br>
                                         ・<strong>0.0%以下 【⚔️ 激戦】</strong> ブレイク前夜期待<br>
