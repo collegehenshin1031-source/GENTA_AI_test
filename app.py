@@ -5,11 +5,11 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - 戦略室のタブ移動＆スマホ対応カレンダー
 - 金融庁コンプライアンス対応（文言校正）
 - カート操作の即時反映＆ジャンプボタン
-- 【修正】expand_more等のアイコン文字化けバグ解消
-- 【修正】ダークモード/ライトモード完全自動対応（文字色同化バグ修正）
-- 【改善】ダークモード時のロゴ自動最適化（白パネル追加）
-- 【改善】ハゲタカ診断結果の独立カード（枠線）化
-- 【改善】フィルター初期設定＆LEVEL昇順ソート対応
+- PC版の銘柄コード入力欄の余白最適化
+- フィルターのデフォルト設定（すべて・要監視OFF）
+- M&A候補の並び順（LEVEL昇順、需給スコア降順）
+- ダークモード/ライトモード完全自動対応
+- 【修正】診断室全体が枠で囲まれてしまう多重枠線バグを解消し、個別銘柄のみカード化
 """
 
 import json
@@ -87,19 +87,29 @@ header { visibility: hidden !important; display: none !important; }
 #MainMenu, footer, .stDeployButton { display: none !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
-/* 全体のベースデザイン（Streamlitのネイティブテーマを阻害しない） */
-.stApp { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; }
+/* 🌟 ダークモード対策：全体の文字色を強制的に黒系（#0F172A）に固定する */
+html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, li {
+    color: #0F172A !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
 
-/* 背景のほんのりグラデーション（ダーク/ライト両対応の透明度） */
+/* 白文字にすべきところは個別に白で上書き（重要） */
+.level-badge, .ratio-badge.high, button[data-testid="baseButton-primary"], .floating-jump-btn, .stTabs [data-baseweb="tab"][aria-selected="true"] p, .cart-popover-container [data-testid="stPopover"] > button, .disclaimer-btn-wrapper button {
+    color: #FFFFFF !important;
+}
+.ratio-badge.medium { color: #0F172A !important; }
+
+/* 全体のベースデザイン */
 div[data-testid="stAppViewContainer"]{
-  background-image: radial-gradient(1200px 600px at 10% 0%, rgba(92,107,192,0.06), transparent 60%),
-                    radial-gradient(900px 450px at 95% 10%, rgba(196,30,58,0.06), transparent 55%) !important;
+  background-color: var(--background-color);
+  background-image: radial-gradient(1200px 600px at 10% 0%, rgba(92,107,192,0.08), transparent 60%),
+                    radial-gradient(900px 450px at 95% 10%, rgba(196,30,58,0.08), transparent 55%) !important;
 }
 .main .block-container{ max-width: 1080px !important; padding: 2.0rem 1.2rem 3.2rem 1.2rem !important; }
 h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 800 !important; margin-bottom: .2rem !important; }
-.subtitle{ text-align:center; opacity: 0.7; font-size:.85rem; margin-bottom: 1.1rem; }
+.subtitle{ text-align:center; color: var(--text-color); opacity: 0.7; font-size:.85rem; margin-bottom: 1.1rem; }
 
-/* 🌟 ライトモード時のロゴ（背景透過） */
+/* ロゴ背景透過マジック */
 .logo-img { mix-blend-mode: multiply; transition: all 0.3s ease; }
 
 /* =======================================
@@ -111,10 +121,10 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
   overflow-x: auto !important;
   -webkit-overflow-scrolling: touch !important;
   justify-content: flex-start !important;
-  background: var(--secondary-background-color) !important;
+  background-color: var(--secondary-background-color) !important;
+  border: 1px solid rgba(128,128,128,0.15) !important;
   padding: 0.35rem !important;
   border-radius: 14px !important;
-  border: 1px solid rgba(128,128,128,0.15) !important;
   box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
   margin-bottom: 1.0rem !important;
   gap: 0.3rem !important;
@@ -127,6 +137,8 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
   padding: 0.6rem 0.8rem !important;
   border-radius: 10px !important;
   font-weight: 700 !important;
+  color: var(--text-color) !important;
+  opacity: 0.7;
   justify-content: center !important;
 }
 .stTabs [data-baseweb="tab"] p {
@@ -135,6 +147,7 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 }
 .stTabs [data-baseweb="tab"][aria-selected="true"] { 
     background: linear-gradient(135deg, #0F172A 0%, #334155 100%) !important; 
+    opacity: 1.0;
 }
 .stTabs [data-baseweb="tab"][aria-selected="true"] p { color: #FFFFFF !important; }
 
@@ -146,21 +159,21 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
   background-color: var(--secondary-background-color) !important; 
   border-radius: 16px; padding: 1rem; margin-bottom: .75rem; 
   border: 1px solid rgba(128,128,128,0.2) !important;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
 }
 .spike-card::before{
   content:""; position:absolute; left:0; top:10px; bottom:10px; width:4px;
   border-radius: 999px; background: rgba(128,128,128,0.3);
 }
-.spike-card.high{ border-color: rgba(196,30,58,0.4) !important; }
+.spike-card.high{ border-color: rgba(196,30,58,0.4) !important; box-shadow: 0 10px 30px rgba(196,30,58,0.15); }
 .spike-card.high::before{ background: linear-gradient(180deg, #C41E3A 0%, #E63946 100%); }
-.spike-card.medium{ border-color: rgba(255,152,0,0.4) !important; }
+.spike-card.medium{ border-color: rgba(255,152,0,0.4) !important; box-shadow: 0 10px 30px rgba(255,152,0,0.15); }
 .spike-card.medium::before{ background: linear-gradient(180deg, #FF9800 0%, #FFC107 100%); }
 
 .card-header{ display:flex; justify-content:space-between; align-items:center; gap:.7rem; margin-bottom: .55rem; }
 .ticker-name a{ font-weight: 800; color: var(--text-color) !important; text-decoration:none; font-size: 1.1rem; }
 .ticker-name a:hover{ text-decoration: underline; }
-.ticker-jp-name { font-size: 0.75rem; opacity: 0.6; margin-left: 6px; }
+.ticker-jp-name { font-size: 0.75rem; color: var(--text-color) !important; opacity: 0.6; margin-left: 6px; }
 
 .ratio-badge{
   min-width: 70px; text-align:center; padding: .2rem .6rem; border-radius: 8px; font-weight: 800;
@@ -174,13 +187,13 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .level-badge { padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; color: white !important; }
 
 .card-body{ display:grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; margin-top: .2rem; }
-.info-label{ font-size: .72rem; opacity: 0.7; font-weight: 700; letter-spacing: .02em; }
-.info-value{ font-size: .93rem; font-weight: 700; }
+.info-label{ font-size: .72rem; color: var(--text-color) !important; opacity: 0.7; font-weight: 700; letter-spacing: .02em; }
+.info-value{ font-size: .93rem; color: var(--text-color) !important; font-weight: 700; }
 .price-val { color: #E63946 !important; font-weight: 800; }
 
 .tag-container { padding: 0 0.8rem 0.5rem; font-size: 0.7rem; }
-.tag-watch { background: rgba(92,107,192,0.15); color: #5C6BC0 !important; padding: 2px 8px; border-radius: 999px; margin-right: 6px; font-weight: 700; display: inline-block; margin-bottom: 4px; }
-.tag-normal { background: transparent; border: 1px solid rgba(128,128,128,0.3); padding: 2px 8px; border-radius: 999px; margin-right: 6px; display: inline-block; margin-bottom: 4px; }
+.tag-watch { background: rgba(92,107,192,0.2); color: #5C6BC0 !important; padding: 2px 8px; border-radius: 999px; margin-right: 6px; font-weight: 700; display: inline-block; margin-bottom: 4px; }
+.tag-normal { background: var(--background-color) !important; color: var(--text-color) !important; border: 1px solid rgba(128,128,128,0.3); padding: 2px 8px; border-radius: 999px; margin-right: 6px; display: inline-block; margin-bottom: 4px; }
 
 /* 💻 PC版の銘柄カード最適化 */
 @media (min-width: 768px) {
@@ -199,8 +212,13 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
     .tag-watch, .tag-normal { font-size: 0.85rem !important; padding: 4px 12px !important; margin-right: 8px !important; }
 }
 
-/* 🌟 ハゲタカ診断 個別カード化スタイル (Streamlitのコンテナを利用) */
-div[data-testid="stVerticalBlock"]:has(.diagnosis-card-marker) {
+/* =======================================
+   🌟 ハゲタカ診断 個別カード化スタイル (多重枠線バグ修正版)
+   ======================================= */
+/* 子要素の最初(nth-child(1))に marker クラスがある特定のコンテナ "だけ" をカード化する。
+   これにより、親要素(タブ全体等)が枠で囲まれるバグを防ぎます。
+*/
+div[data-testid="stVerticalBlock"]:has(> div:nth-child(1) .diagnosis-card-marker) {
     background-color: var(--secondary-background-color) !important;
     border: 2px solid rgba(128, 128, 128, 0.2) !important;
     border-radius: 16px !important;
@@ -210,10 +228,11 @@ div[data-testid="stVerticalBlock"]:has(.diagnosis-card-marker) {
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* ボタンの共通角丸 */
+/* =======================================
+   ボタンとその他のコンポーネント
+   ======================================= */
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
 
-/* 🛒 カートに入れる等の青系メインボタン（Primary） */
 div.stButton > button[data-testid="baseButton-primary"] {
     background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%) !important;
     color: white !important;
@@ -221,7 +240,6 @@ div.stButton > button[data-testid="baseButton-primary"] {
     box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3) !important;
 }
 
-/* 🗑️ カートをリセット 専用の控えめでお洒落なボタンスタイル */
 .reset-btn-container { margin-bottom: -0.5rem; }
 .reset-btn-container button {
     background: transparent !important;
@@ -237,16 +255,14 @@ div.stButton > button[data-testid="baseButton-primary"] {
 
 .filter-btn-container button { border-radius: 12px !important; font-weight: 800 !important; }
 
-/* 免責事項ボックスのスタイル */
 .disclaimer-box {
     background-color: rgba(245, 158, 11, 0.1); 
     border-left: 4px solid #F59E0B;
     border-radius: 8px;
     padding: 0.8rem 1rem; margin: 1.5rem 0 1rem 0; font-size: 0.75rem; 
-    line-height: 1.5;
+    color: var(--text-color) !important; line-height: 1.5;
 }
 
-/* 免責同意ボタンの発光アニメーション */
 @keyframes redPulse {
     0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.8); }
     70% { box-shadow: 0 0 0 15px rgba(220, 38, 38, 0); }
@@ -262,7 +278,12 @@ div.stButton > button[data-testid="baseButton-primary"] {
    🌟 ダークモード時の自動最適化設定
    ======================================= */
 @media (prefers-color-scheme: dark) {
-    /* ダークモード時はロゴの背景透過をやめ、白い角丸パネルを敷く */
+    /* ダークモード時は文字色指定（#0F172A）を解除して白文字に戻す */
+    html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, li {
+        color: var(--text-color) !important;
+    }
+    
+    /* ダークモード時はロゴの背景透過をやめ、白い角丸パネルを敷いてクッキリ見せる */
     .logo-img {
         mix-blend-mode: normal !important;
         background-color: rgba(255, 255, 255, 0.95) !important;
@@ -272,9 +293,9 @@ div.stButton > button[data-testid="baseButton-primary"] {
     }
     
     /* 診断カードの枠線をダークモード用に調整 */
-    div[data-testid="stVerticalBlock"]:has(.diagnosis-card-marker) {
-        border: 2px solid rgba(255, 255, 255, 0.1) !important;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.4) !important;
+    div[data-testid="stVerticalBlock"]:has(> div:nth-child(1) .diagnosis-card-marker) {
+        border: 2px solid rgba(255, 255, 255, 0.15) !important;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
     }
 }
 </style>
@@ -425,14 +446,6 @@ def send_test_email(email: str, app_password: str) -> tuple[bool, str]:
             server.send_message(msg)
         return True, "テストメール送信成功！"
     except Exception as e: return False, f"送信エラー: {str(e)}"
-
-def format_volume_pct(v) -> str:
-    if v is None: return "-"
-    try:
-        fv = float(v)
-        if not np.isfinite(fv): return "-"
-        return "<0.01%" if fv < 0.01 else f"{fv:.2f}%"
-    except: return "-"
 
 # ==========================================
 # ハゲタカ診断エンジン用ヘルパー関数
@@ -758,6 +771,7 @@ def draw_chart(row):
                   annotation_position="bottom right", annotation_font_color="cyan", row=1, col=1)
     fig.add_hline(y=recent_20_low, line_width=1.5, line_dash="dot", line_color="cyan", row=1, col=2)
 
+    # チャートの背景も透明にしてテーマ（ダーク/ライト）に自動適応させる
     fig.update_layout(
         title=f"{row['銘柄名']} 日足 ＆ 価格帯別出来高", 
         xaxis_rangeslider_visible=False, height=350, margin=dict(l=0, r=0, t=30, b=0), dragmode=False,
@@ -1001,7 +1015,7 @@ def show_main_page():
                 filtered_data[tk] = it
 
             if filtered_data:
-                # 💡 【改善】LEVELは昇順（1が上）、同じLEVEL内なら需給スコア降順でソート
+                # 💡 LEVEL 1から昇順に並べる（同じLEVELなら需給スコア降順）
                 sorted_items = sorted(filtered_data.items(), key=lambda x: (int(x[1].get('level',0)), -float(x[1].get('flow_score',0))))
                 for ticker, d in sorted_items:
                     render_card(ticker, d)
@@ -1141,9 +1155,9 @@ def show_main_page():
                         if not code.isdigit(): continue
                         diag_data = evaluate_stock(f"{code}.T")
                         if diag_data:
-                            # 💡 【改善】1銘柄ごとに独立した枠線カード（diagnosis-card-markerを検知してカード化）
+                            # 💡 診断結果をカードで囲んで区切りを明確に（親要素への干渉を防止）
                             with st.container():
-                                st.markdown('<div class="diagnosis-card-marker" style="display:none;"></div>', unsafe_allow_html=True)
+                                st.markdown('<span class="diagnosis-card-marker"></span>', unsafe_allow_html=True)
                                 
                                 c1, c2 = st.columns([1, 2])
                                 with c1:
