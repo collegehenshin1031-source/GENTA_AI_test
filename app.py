@@ -3,8 +3,8 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - ログイン画面のスタイリッシュ化（タブ分け、ロゴ透過）
 - 需給スコアによるM&A候補検知
 - 通知設定の登録・変更・削除（Google Sheets永続化）
-- 診断カート機能（最大5件、戦略室連携用）
-- ログイン＝免責同意のシームレス化（UX改善）
+- 診断カート機能（高齢者配慮UI、上限表示、件数表示対応）
+- 統計表示のスマート化
 """
 
 import json
@@ -108,13 +108,6 @@ h1{ text-align:center !important; font-size: 1.55rem !important; font-weight: 80
 .info-label{ font-size: .72rem; color:#64748B; font-weight: 700; letter-spacing: .02em; }
 .info-value{ font-size: .93rem; color:#0F172A; font-weight: 700; }
 
-.stat-box{ background: rgba(255,255,255,0.88); border: 1px solid rgba(15,23,42,0.08); border-radius: 14px; padding: .9rem .9rem; box-shadow: 0 10px 30px rgba(15,23,42,0.06); text-align:center; }
-.stat-value{ font-size: 1.55rem; font-weight: 900; line-height: 1.1; }
-.stat-value.high{ color:#C41E3A; }
-.stat-value.medium{ color:#FF9800; }
-.stat-value.total{ color:#0F172A; }
-.stat-label{ color:#64748B; font-size:.78rem; font-weight:700; margin-top:.25rem; }
-
 div.stButton > button{ border-radius: 12px !important; font-weight: 800 !important; padding: .55rem .9rem !important; }
 
 /* 免責事項ボックスのスタイル */
@@ -127,6 +120,26 @@ div.stButton > button{ border-radius: 12px !important; font-weight: 800 !importa
     font-size: 0.75rem;
     color: #475569;
     line-height: 1.5;
+}
+
+/* =======================================
+   免責同意ボタンの発光アニメーション
+   ======================================= */
+@keyframes redPulse {
+    0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.8); }
+    70% { box-shadow: 0 0 0 15px rgba(220, 38, 38, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+.disclaimer-btn-wrapper button[kind="primary"]:not([disabled]) {
+    background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%) !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    animation: redPulse 1.5s infinite !important;
+    transform: scale(1.02);
+    transition: transform 0.2s ease;
+}
+.disclaimer-btn-wrapper button[kind="primary"]:not([disabled]):hover {
+    transform: scale(1.04);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -363,13 +376,21 @@ def render_card(ticker: str, d: Dict):
     </div>
     """, unsafe_allow_html=True)
 
+    # 診断カートボタンの処理
+    cart_len = len(st.session_state["cart"])
     if ticker in st.session_state["cart"]:
-        if st.button("🛒 カートから外す", key=f"cart_{ticker}", use_container_width=True):
+        btn_text = f"🛒 診断カートから外す ({cart_len}/5)"
+        if st.button(btn_text, key=f"cart_{ticker}", use_container_width=True):
             st.session_state["cart"].remove(ticker)
             st.rerun()
     else:
-        is_full = len(st.session_state["cart"]) >= 5
-        if st.button("🛒 カートに追加", key=f"cart_{ticker}", use_container_width=True, disabled=is_full):
+        is_full = cart_len >= 5
+        if is_full:
+            btn_text = "🛒 カートの上限に達しました (5/5)"
+        else:
+            btn_text = f"🛒 診断カートに入れる ({cart_len}/5)"
+            
+        if st.button(btn_text, key=f"cart_{ticker}", use_container_width=True, disabled=is_full):
             if not is_full:
                 st.session_state["cart"].append(ticker)
                 st.rerun()
@@ -457,7 +478,6 @@ def show_login_page():
                     st.session_state["login_error"] = True
                     st.rerun()
 
-
 def show_main_page():
     logo_base64 = get_logo_base64()
     if logo_base64:
@@ -480,11 +500,28 @@ def show_main_page():
 
             lvl4 = len([v for v in display_data.values() if int(v.get("level", 0)) == 4])
             lvl3p = len([v for v in display_data.values() if int(v.get("level", 0)) >= 3])
-            col1, col2, col3 = st.columns(3)
-            with col1: st.markdown(f'<div class="stat-box"><div class="stat-value high">{lvl4}</div><div class="stat-label">LEVEL 4</div></div>', unsafe_allow_html=True)
-            with col2: st.markdown(f'<div class="stat-box"><div class="stat-value medium">{lvl3p}</div><div class="stat-label">LEVEL 3+</div></div>', unsafe_allow_html=True)
-            with col3: st.markdown(f'<div class="stat-box"><div class="stat-value total">{len(display_data)}</div><div class="stat-label">表示件数</div></div>', unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # スマートな統計バー
+            st.markdown(f"""
+            <div style="display: flex; justify-content: space-around; align-items: center; background: rgba(255,255,255,0.85); 
+                        border: 1px solid rgba(15,23,42,0.08); border-radius: 12px; padding: 0.8rem; margin-bottom: 1rem; 
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.04); backdrop-filter: blur(8px);">
+                <div style="text-align: center;">
+                    <div style="color: #64748B; font-size: 0.75rem; font-weight: 700;">LEVEL 4</div>
+                    <div style="color: #C41E3A; font-size: 1.4rem; font-weight: 900;">{lvl4}<span style="font-size: 0.8rem; color: #94A3B8; font-weight: 600; margin-left: 2px;">件</span></div>
+                </div>
+                <div style="width: 1px; height: 40px; background: rgba(15,23,42,0.08);"></div>
+                <div style="text-align: center;">
+                    <div style="color: #64748B; font-size: 0.75rem; font-weight: 700;">LEVEL 3+</div>
+                    <div style="color: #FF9800; font-size: 1.4rem; font-weight: 900;">{lvl3p}<span style="font-size: 0.8rem; color: #94A3B8; font-weight: 600; margin-left: 2px;">件</span></div>
+                </div>
+                <div style="width: 1px; height: 40px; background: rgba(15,23,42,0.08);"></div>
+                <div style="text-align: center;">
+                    <div style="color: #64748B; font-size: 0.75rem; font-weight: 700;">表示件数</div>
+                    <div style="color: #0F172A; font-size: 1.4rem; font-weight: 900;">{len(display_data)}<span style="font-size: 0.8rem; color: #94A3B8; font-weight: 600; margin-left: 2px;">件</span></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
             tb1, tb2 = st.columns([2.0, 2.0])
             with tb1:
