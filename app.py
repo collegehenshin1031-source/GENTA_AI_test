@@ -8,7 +8,10 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - カート操作の即時反映（コールバック化）
 - カートボタンのUI強化（色分け・巨大化）
 - スマホ表示時のタブ崩れ防止＆スワイプ対応
-- 【UX究極改善】安全なフローティング・ジャンプボタン（カート状態連動）
+- 安全なフローティング・ジャンプボタン（カート状態連動）
+- 【改善】PC版の銘柄コード入力欄の余白最適化
+- 【改善】カートポップオーバー廃止＆スマートなリセットボタン化
+- 【改善】カードの「株数比」を「商い熱量」アイコン表示に進化
 """
 
 import json
@@ -184,21 +187,20 @@ div.stButton > button[data-testid="baseButton-primary"] {
     box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3) !important;
 }
 
-/* 巨大化させる診断カートのプルダウンボタン専用スタイル */
-.cart-popover-container [data-testid="stPopover"] > button {
-    background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
-    color: white !important;
-    border: none !important;
-    padding: 0.8rem 1rem !important;
-    font-size: 1.15rem !important;
+/* 🗑️ カートをリセット 専用の控えめでお洒落なボタンスタイル */
+.reset-btn-container button {
+    background: linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 100%) !important;
+    color: #E11D48 !important;
+    border: 1px solid #FECDD3 !important;
     font-weight: 800 !important;
     border-radius: 12px !important;
-    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4) !important;
+    box-shadow: 0 4px 10px rgba(225, 29, 72, 0.1) !important;
     transition: all 0.2s ease !important;
 }
-.cart-popover-container [data-testid="stPopover"] > button:hover {
+.reset-btn-container button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5) !important;
+    box-shadow: 0 6px 15px rgba(225, 29, 72, 0.15) !important;
+    background: linear-gradient(135deg, #FFE4E6 0%, #FECDD3 100%) !important;
 }
 
 /* 免責事項ボックスのスタイル */
@@ -631,6 +633,7 @@ def evaluate_stock(ticker):
         star_desc = selected_pattern[0]
         base_logic = selected_pattern[1]
 
+        # コンプライアンス対策：マイルドな名称に変更
         flavor_logic = ""
         if cap_category == "large": flavor_logic = "時価総額が巨大なため値動きは重めですが、機関投資家や外国人投資家の資金流入をエンジンとした、強力で重厚なトレンドが期待できます。"
         elif cap_category == "target": flavor_logic = "中小型株として大口資金が最も好む規模感であり、資金が投下されれば一気に株価が動意づく（または壁を突破する）ポテンシャルを秘めています。"
@@ -679,6 +682,7 @@ def evaluate_stock(ticker):
         intervention_score = int(round(min(intervention_score, 100) / 10.0)) * 10
         intervention_score = max(10, min(intervention_score, 90))
         
+        # コンプライアンス対策：マイルドな文言
         intervention_comment = ""
         if intervention_score >= 80: intervention_comment = "🚨 【極めて濃厚】大規模な資金流入のシグナルが点灯しています。"
         elif intervention_score >= 50: intervention_comment = "👀 【予兆あり】平常時とは異なる資金の動きが観測されています。"
@@ -770,6 +774,23 @@ def render_card(ticker: str, d: Dict):
 
     score_text = f"{flow_score}"
     level_text = f"LEVEL {level}" if level > 0 else "LEVEL -"
+    
+    # 💡 【改善】株数比を「商い熱量」としてアイコン表示
+    vol_pct_val = d.get('volume_of_shares_pct')
+    turn_icon = ""
+    try:
+        if vol_pct_val is not None:
+            fv = float(vol_pct_val)
+            if np.isfinite(fv):
+                if fv >= 10.0: turn_icon = "🔥🔥🔥"
+                elif fv >= 5.0: turn_icon = "🔥🔥"
+                elif fv >= 2.0: turn_icon = "🔥"
+                elif fv > 0: turn_icon = "💤"
+    except:
+        pass
+    
+    formatted_pct = format_volume_pct(vol_pct_val)
+    est_mark = '（推）' if d.get('volume_of_shares_pct_is_estimated') else ''
 
     st.markdown(f"""
     <div class="spike-card {card_class}">
@@ -794,7 +815,7 @@ def render_card(ticker: str, d: Dict):
                 <span class="info-label">出来高</span><br>
                 <span class="info-value">{d.get('vol_ratio', 0)}x</span>
                 <div style="margin-top:2px;font-size:0.72rem;color:#64748B;font-weight:700;">
-                    株数比 {format_volume_pct(d.get('volume_of_shares_pct'))}{'（推定）' if d.get('volume_of_shares_pct_is_estimated') else ''}
+                    商い熱量 {turn_icon} {formatted_pct}{est_mark}
                 </div>
             </div>
         </div>
@@ -929,8 +950,8 @@ def show_main_page():
             </div>
             """, unsafe_allow_html=True)
 
-            # 🛠 カートボタンを大きく見せるためにカラム比率を変更
-            tb1, tb2 = st.columns([1.0, 1.5])
+            # 🛠 【改善】リセットボタン化 ＆ PCでのカラム幅最適化
+            tb1, tb2, tb3 = st.columns([1.5, 1.5, 3.0])
             with tb1:
                 try:
                     with st.popover("🔎 フィルターを開く"):
@@ -944,27 +965,22 @@ def show_main_page():
                 except: pass
 
             with tb2:
-                # 🛒 診断カート（即時反映のコールバック＆巨大化CSS適用）
-                st.markdown('<div class="cart-popover-container">', unsafe_allow_html=True)
-                with st.popover(f"🛒 診断カートを開く ({len(st.session_state.get('cart', []))}/5)", use_container_width=True):
-                    cart = st.session_state.get("cart", [])
-                    if not cart:
-                        st.write("カートは空です")
-                    else:
-                        for c in cart: st.write(f"・ {c} （{TICKER_NAMES_JP.get(c, '')}）")
-                        # 2回押しバグ解消：on_clickを利用
-                        st.button("🗑 全削除", use_container_width=True, on_click=clear_cart)
-                        st.markdown("---")
-                        st.caption("※『ハゲタカ診断』タブを開くと自動で入力されます。")
+                # 🗑️ カートリセット専用ボタン（即時反映のコールバック＆お洒落なパステルローズ色）
+                st.markdown('<div class="reset-btn-container">', unsafe_allow_html=True)
+                cart_len = len(st.session_state.get("cart", []))
+                st.button(f"🗑️ カートを空にする ({cart_len}/5)", use_container_width=True, on_click=clear_cart)
                 st.markdown('</div>', unsafe_allow_html=True)
-
+                
+            with tb3:
+                # 右側の空いたスペースに現在適用中のフィルター情報を表示
+                chips = []
+                lvl_sel = st.session_state.get("flt_level_select", "すべて")
+                if lvl_sel != "すべて": chips.append(lvl_sel)
+                if st.session_state.get("flt_watch_only"): chips.append("要監視のみ")
+                if st.session_state.get("flt_query"): chips.append(f"検索: {st.session_state['flt_query']}")
+                if chips: st.caption("✅ 適用中のフィルター: " + " / ".join(chips))
+            
             st.markdown("")
-            chips = []
-            lvl_sel = st.session_state.get("flt_level_select", "すべて")
-            if lvl_sel != "すべて": chips.append(lvl_sel)
-            if st.session_state.get("flt_watch_only"): chips.append("要監視のみ")
-            if st.session_state.get("flt_query"): chips.append(f"検索: {st.session_state['flt_query']}")
-            if chips: st.caption("✅ 適用中のフィルター: " + " / ".join(chips))
             
             q = (st.session_state.get("flt_query") or "").strip().lower()
             w_only = bool(st.session_state.get("flt_watch_only"))
@@ -1055,9 +1071,10 @@ def show_main_page():
         cart_codes = [code.replace(".T", "") for code in st.session_state.get("cart", [])]
         default_input = " ".join(cart_codes)
         
-        st.markdown("##### 🔍 気になる銘柄を入力（スペース区切りで複数可）")
+        # 💡 【改善】PC版での余白を削るため、text_areaからスッキリしたtext_inputに変更
+        st.markdown("##### 🔍 気になる銘柄を入力")
         with st.form(key='search_form'):
-            input_code = st.text_area("銘柄コード", value=default_input, height=68, placeholder="例: 7011 7203 9984")
+            input_code = st.text_input("銘柄コード", value=default_input, placeholder="例: 7011 7203 9984 (スペース区切りで複数可)", label_visibility="collapsed")
             search_btn = st.form_submit_button("🦅 ハゲタカAIで診断する")
             
         if search_btn and input_code:
