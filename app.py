@@ -10,9 +10,10 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - スマホ表示時のタブ崩れ防止＆スワイプ対応
 - 安全なフローティング・ジャンプボタン（カート状態連動）
 - PC版の銘柄コード入力欄の余白最適化
-- 【改善】フィルターのデフォルト設定（LEVEL3以上・要監視ON）
-- 【改善】銘柄カードの「商い熱量」を削除してスッキリ化
-- 【改善】PC版のボタン配置のズレ解消（中央・縦積み配置へ最適化）
+- フィルターのデフォルト設定（LEVEL3以上・要監視ON）
+- 銘柄カードの「商い熱量」を削除してスッキリ化
+- 【改善】統計バーとボタン間の余白を削減し、キュッと詰まったUIへ
+- 【改善】「表示件数」を「総検出数」に変更
 """
 
 import json
@@ -225,6 +226,7 @@ div.stButton > button[data-testid="baseButton-primary"] {
 }
 
 /* 🗑️ カートをリセット 専用の控えめでお洒落なボタンスタイル */
+.reset-btn-container { margin-bottom: -0.5rem; }
 .reset-btn-container button {
     background: linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 100%) !important;
     color: #E11D48 !important;
@@ -681,7 +683,6 @@ def evaluate_stock(ticker):
         intervention_score = int(round(min(intervention_score, 100) / 10.0)) * 10
         intervention_score = max(10, min(intervention_score, 90))
         
-        # コンプライアンス対策：マイルドな文言
         intervention_comment = ""
         if intervention_score >= 80: intervention_comment = "🚨 【極めて濃厚】大規模な資金流入のシグナルが点灯しています。"
         elif intervention_score >= 50: intervention_comment = "👀 【予兆あり】平常時とは異なる資金の動きが観測されています。"
@@ -775,7 +776,6 @@ def render_card(ticker: str, d: Dict):
     score_text = f"{flow_score}"
     level_text = f"LEVEL {level}" if level > 0 else "LEVEL -"
 
-    # 💡 【改善】商い熱量を完全に削除し、4項目をスッキリ配置
     st.markdown(f"""
     <div class="spike-card {card_class}">
         <div class="card-header">
@@ -863,7 +863,6 @@ def show_login_page():
                     st.rerun()
 
 def show_main_page():
-    # 💡 【改善】フィルターのデフォルト初期化（LEVEL 3以上、要監視ON）
     if "flt_level_select" not in st.session_state:
         st.session_state["flt_level_select"] = "LEVEL 3 以上"
     if "flt_watch_only" not in st.session_state:
@@ -911,7 +910,7 @@ def show_main_page():
             
             st.markdown(f"""
             <div style="display: flex; justify-content: space-around; align-items: center; background: rgba(255,255,255,0.85); 
-                        border: 1px solid rgba(15,23,42,0.08); border-radius: 12px; padding: 0.8rem; margin-bottom: 1rem; 
+                        border: 1px solid rgba(15,23,42,0.08); border-radius: 12px; padding: 0.8rem; margin-bottom: 0.5rem; 
                         box-shadow: 0 4px 15px rgba(0,0,0,0.04); backdrop-filter: blur(8px);">
                 <div style="text-align: center;">
                     <div style="color: #64748B; font-size: 0.75rem; font-weight: 700;">LEVEL 4</div>
@@ -924,14 +923,12 @@ def show_main_page():
                 </div>
                 <div style="width: 1px; height: 40px; background: rgba(15,23,42,0.08);"></div>
                 <div style="text-align: center;">
-                    <div style="color: #64748B; font-size: 0.75rem; font-weight: 700;">表示件数</div>
+                    <div style="color: #64748B; font-size: 0.75rem; font-weight: 700;">総検出数</div>
                     <div style="color: #0F172A; font-size: 1.4rem; font-weight: 900;">{len(display_data)}<span style="font-size: 0.8rem; color: #94A3B8; font-weight: 600; margin-left: 2px;">件</span></div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-            # 💡 【改善】PC版のボタン配置のズレ解消（中央・縦積み配置）
-            st.markdown("<br>", unsafe_allow_html=True)
             _, center_col, _ = st.columns([1, 1.8, 1])
             with center_col:
                 st.markdown('<div class="reset-btn-container">', unsafe_allow_html=True)
@@ -947,7 +944,6 @@ def show_main_page():
                     level_opt = st.selectbox("LEVEL絞り込み", options=level_options, index=current_idx)
                     watch_opt = st.toggle("要監視のみ", value=st.session_state.get("flt_watch_only", True))
                     
-                    # 変数をセッションステートに同期
                     st.session_state["flt_level_select"] = level_opt
                     st.session_state["flt_watch_only"] = watch_opt
                     
@@ -955,7 +951,6 @@ def show_main_page():
                         st.session_state.update({"flt_level_select": "LEVEL 3 以上", "flt_watch_only": True, "flt_query": ""})
                         st.rerun()
 
-                # 適用中のフィルターチップ表示
                 chips = []
                 lvl_sel = st.session_state.get("flt_level_select", "LEVEL 3 以上")
                 if lvl_sel != "すべて": chips.append(lvl_sel)
@@ -988,7 +983,6 @@ def show_main_page():
             else:
                 st.info("該当する銘柄がありません")
                 
-            # 🌟 M&A候補タブを開いている時だけフローティング・ジャンプボタンを表示
             current_cart_len = len(st.session_state.get('cart', []))
             if current_cart_len >= 5:
                 btn_text = "🚨 カート満杯！上に戻って【診断】へ"
