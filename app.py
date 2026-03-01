@@ -8,10 +8,11 @@ HAGETAKA SCOPE - M&A候補検知ツール
 - カート操作の即時反映（コールバック化）
 - カートボタンのUI強化（色分け・巨大化）
 - スマホ表示時のタブ崩れ防止＆スワイプ対応
+- 安全なフローティング・ジャンプボタン（カート状態連動）
 - PC版の銘柄コード入力欄の余白最適化
 - カートポップオーバー廃止＆スマートなリセットボタン化
-- 【修正】フローティングボタンを「M&A候補」タブのみに限定表示
-- 【修正】カードから「商い熱量」を削除し、銘柄コードの「.T」を非表示化
+- カードの「株数比」を「商い熱量」アイコン表示に進化
+- 【修正】SyntaxError (if-elseのインデント崩れ) を修正
 """
 
 import json
@@ -405,6 +406,14 @@ def send_test_email(email: str, app_password: str) -> tuple[bool, str]:
         return True, "テストメール送信成功！"
     except Exception as e: return False, f"送信エラー: {str(e)}"
 
+def format_volume_pct(v) -> str:
+    if v is None: return "-"
+    try:
+        fv = float(v)
+        if not np.isfinite(fv): return "-"
+        return "<0.01%" if fv < 0.01 else f"{fv:.2f}%"
+    except: return "-"
+
 # ==========================================
 # ハゲタカ診断エンジン用ヘルパー関数
 # ==========================================
@@ -767,6 +776,23 @@ def render_card(ticker: str, d: Dict):
 
     score_text = f"{flow_score}"
     level_text = f"LEVEL {level}" if level > 0 else "LEVEL -"
+    
+    # 💡 株数比を「商い熱量」としてアイコン表示
+    vol_pct_val = d.get('volume_of_shares_pct')
+    turn_icon = ""
+    try:
+        if vol_pct_val is not None:
+            fv = float(vol_pct_val)
+            if np.isfinite(fv):
+                if fv >= 10.0: turn_icon = "🔥🔥🔥"
+                elif fv >= 5.0: turn_icon = "🔥🔥"
+                elif fv >= 2.0: turn_icon = "🔥"
+                elif fv > 0: turn_icon = "💤"
+    except:
+        pass
+    
+    formatted_pct = format_volume_pct(vol_pct_val)
+    est_mark = '（推）' if d.get('volume_of_shares_pct_is_estimated') else ''
 
     st.markdown(f"""
     <div class="spike-card {card_class}">
@@ -790,6 +816,9 @@ def render_card(ticker: str, d: Dict):
             <div>
                 <span class="info-label">出来高</span><br>
                 <span class="info-value">{d.get('vol_ratio', 0)}x</span>
+                <div class="turnover-info">
+                    商い熱量 {turn_icon} {formatted_pct}{est_mark}
+                </div>
             </div>
         </div>
         <div class="tag-container">{tags_html}</div>
@@ -1024,8 +1053,6 @@ def show_main_page():
         </style>
         <a href="#top-of-page" target="_self" class="floating-jump-btn">{btn_text}</a>
         """, unsafe_allow_html=True)
-        else:
-            st.info("データがありません。GitHub Actionsを実行してください。")
 
     # ==========================================
     # タブ2: ハゲタカ診断（＋戦略室）
