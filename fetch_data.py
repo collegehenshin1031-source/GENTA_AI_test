@@ -99,10 +99,7 @@ def compute_support_from_recent_growth(
     recent_ratio: float = 0.33,
     low_band_ratio: float = 0.35,
 ):
-    """下値ラインを「直近で価格帯別売買高が伸びた帯 × 安値付近」から選ぶ。
-
-    返り値: (support_price, support_upper_price)
-    """
+    """下値ラインを「直近で価格帯別売買高が伸びた帯 × 安値付近」から選ぶ。"""
     if df is None or df.empty or len(df) < 40:
         return None, None
 
@@ -144,10 +141,7 @@ def compute_support_from_recent_growth(
 
 
 def compute_support_zone_from_profile(vp: pd.DataFrame, threshold_ratio: float = 0.60):
-    """高出来高ゾーン（POC周辺）を抽出し、その下限を下値ラインとして返す。
-
-    返り値: (support_price, zone_upper_price)
-    """
+    """高出来高ゾーン（POC周辺）を抽出し、その下限を下値ラインとして返す。"""
     if vp is None or vp.empty:
         return None, None
     if 'volume' not in vp.columns:
@@ -177,27 +171,8 @@ def compute_support_zone_from_profile(vp: pd.DataFrame, threshold_ratio: float =
     return support, upper
 
 
-def compute_poc_support_from_profile(vp: pd.DataFrame):
-    """価格帯別売買高の最大出来高帯（POC）の下限を下値ラインとして返す。
-
-    ユーザー要望：期間ごと（1mo/3mo/6mo/1y）で、その期間内で最も出来高が厚い
-    価格帯の「下側」を下値ラインにする。
-    """
-    if vp is None or vp.empty or 'volume' not in vp.columns:
-        return None
-    try:
-        idx = int(vp['volume'].idxmax())
-        return float(vp.loc[idx, 'price_low'])
-    except Exception:
-        return None
-
-
 def support_position_tag(latest_price: float, support_price: float | None) -> tuple[str | None, float | None]:
-    """下値ラインからの位置（％）を計算し、中立的なタグ名を返す。
-    ※「割安/割高」の価値判断に見えないよう、価格の“位置”表現にしている。
-    - 下側ゾーン: +3%以内（下値ラインに近い）
-    - 上側ゾーン: +25%以上（下値ラインから大きく離れている）
-    """
+    """下値ラインからの位置（％）を計算し、中立的なタグ名を返す。"""
     if support_price is None or support_price <= 0:
         return None, None
     gap_pct = (latest_price / support_price - 1.0) * 100.0
@@ -1519,6 +1494,25 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, d
                     ma_score = float(min(100.0, max(0.0, flow_score * 0.45 + reorg_score * 0.40 + event_score * 0.15)))
                     level = determine_level(ma_score)
 
+                    # --- ここから追加・修正（サポートラインの計算） ---
+                    support_price = None
+                    support_upper = None
+                    support_gap_pct = None
+                    support_tag = None
+
+                    try:
+                        df_half_year = df.tail(125)
+                        if len(df_half_year) >= 30:
+                            vp = calculate_volume_profile(df_half_year, bins=24)
+                            sup_p, sup_u = compute_support_zone_from_profile(vp)
+                            if sup_p is not None:
+                                support_price = sup_p
+                                support_upper = sup_u
+                                support_tag, support_gap_pct = support_position_tag(latest_price, support_price)
+                    except Exception:
+                        pass
+                    # --- ここまで ---
+
                     tags = []
                     # 下値ライン位置タグ（中立表現）
                     if support_tag:
@@ -1581,7 +1575,7 @@ def fetch_volume_data(tickers: list[str], chunk_size: int = 20) -> tuple[dict, d
         except Exception as e:
             print(f"  ❌ チャンク取得エラー: {e}")
 
-        time.sleep(0.25)
+        time.sleep(1.5)
 
     return results, qualified
 
