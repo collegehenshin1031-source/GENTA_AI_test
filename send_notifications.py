@@ -120,7 +120,7 @@ def select_notify_items(data: dict) -> list[dict]:
 
 
 # ==========================================
-# メール本文
+# メール本文（★変更箇所）
 # ==========================================
 def create_email(data: dict, items: list[dict]) -> tuple[str, str] | tuple[None, None]:
     if not items:
@@ -133,34 +133,71 @@ def create_email(data: dict, items: list[dict]) -> tuple[str, str] | tuple[None,
 
     lines = [
         "━" * 38,
-        "🦅 ハゲタカSCOPE（候補一覧）",
+        " 🦅 ハゲタカSCOPE 検出レポート",
         "━" * 38,
-        f"更新日時: {updated_at}",
-        f"通知条件: LEVEL {NOTIFY_LEVEL_MIN}+ または FlowScore {NOTIFY_FLOW_MIN}+",
+        f"📅 更新日時: {updated_at}",
+        f"🎯 検出条件: LEVEL {NOTIFY_LEVEL_MIN}以上 または 需給スコア {NOTIFY_FLOW_MIN}以上",
         "",
-        "※本通知は市場データの可視化に基づく候補一覧です。",
-        "※銘柄推奨・売買助言ではありません。最終判断はご自身で行ってください。",
+        "本日の市場から、大口資金の介入や異常な出来高変化が疑われる銘柄をピックアップしました。",
+        "気になった銘柄があれば、アプリの【🦅 ハゲタカAIで診断する】にコードを入力して、",
+        "上値余地や安全性を必ずチェックしてください！",
+        "",
+        "▼ アプリはこちら（ログインして確認）",
+        "https://hagetaka-scope-test.streamlit.app/",
+        "",
         "━" * 38,
-        "",
+        " 📊 本日のピックアップ銘柄",
+        "━" * 38,
+        ""
     ]
 
-    # 上位のみ（長文を避ける）
-    for s in items[:25]:
-        ticker = s.get("ticker", "")
-        name = (s.get("name", "") or "")[:16]
-        level = int(s.get("level", 0))
-        flow = s.get("flow_score", 0)
-        state = s.get("display_state", s.get("state", ""))
-        tags = s.get("tags", [])
-        tag_txt = " / ".join(tags[:4]) if tags else "-"
-        lines.extend([
-            f"LEVEL {level}  {ticker}  {name}",
-            f"  FlowScore: {flow} / 状態: {state}",
-            f"  タグ: {tag_txt}",
-            "",
-        ])
+    # LEVELでグルーピング
+    levels_dict = {4: [], 3: [], 2: [], 1: [], 0: []}
+    for s in items[:30]:  # 上位30件まで
+        lv = int(s.get("level", 0))
+        levels_dict[lv].append(s)
 
-    lines.append("アプリ（本番環境）: https://hagetaka-scope-test.streamlit.app/")
+    for lv in [4, 3, 2, 1, 0]:
+        group = levels_dict[lv]
+        if not group:
+            continue
+        
+        # LEVELごとの見出し
+        if lv == 4:
+            lines.append(f"🟥 【LEVEL 4】 （{len(group)}件） - 特異性高・要注目！")
+        elif lv == 3:
+            lines.append(f"🟧 【LEVEL 3】 （{len(group)}件）")
+        elif lv == 2:
+            lines.append(f"🟨 【LEVEL 2】 （{len(group)}件）")
+        elif lv == 1:
+            lines.append(f"🟦 【LEVEL 1】 （{len(group)}件）")
+        else:
+            lines.append(f"⬜ 【LEVEL 0】 （{len(group)}件）")
+            
+        lines.append("-" * 38)
+        
+        for s in group:
+            ticker = s.get("ticker", "").replace(".T", "")
+            name = (s.get("name", "") or "")[:15]
+            flow = s.get("flow_score", 0)
+            state = s.get("display_state", s.get("state", ""))
+            tags = s.get("tags", [])
+            tag_txt = " / ".join(tags[:4]) if tags else "-"
+            
+            lines.append(f"・{ticker} {name}")
+            lines.append(f"  [需給スコア: {flow}] 状態: {state}")
+            if tag_txt != "-":
+                lines.append(f"  {tag_txt}")
+            lines.append("")
+
+    lines.extend([
+        "━" * 38,
+        "⚠️ 免責事項",
+        "本通知は市場データの可視化に基づく情報提供であり、投資推奨や売買助言ではありません。",
+        "実際の投資判断は、利用者ご自身の責任において行ってください。",
+        "━" * 38,
+    ])
+
     return subject, "\n".join(lines)
 
 
