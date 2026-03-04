@@ -1203,7 +1203,7 @@ def show_main_page():
                                         <div style='font-size: 0.95rem; line-height: 1.6;'>
                                         当ツールでは、安全性を<strong>「最大の需給の壁（オレンジの点線）」からの乖離率（％）</strong>で判定します。<br>
                                         マイナス圏（壁より下）は過去のしこり玉を恐れて一般投資家が手を出せない「割安圏」であり、大口資金が水面下で仕込むポイントになりやすいです。<br><br>
-                                        <span style='color: #3B82F6; font-weight: bold;'>【🛡️プロのリスク管理】マイナス圏で仕込む場合は、直近の底値（青の点線）を下回ったら「シナリオ崩れ」として撤退（損切り）を検討することで、大きな損失を防ぐ目安となります。</span><br><br>
+                                        <span style='color: #3B82F6; font-weight: bold;'>【🛡️プロのリスク管理】マイナス圏で仕込む場合は、直近の底値（青の点線）を下回ったら「シナリオ崩れ」として撤退（損切り）を検討することで、リスク管理の目安としてお使いください。</span><br><br>
                                         <strong>【AIの判定基準一覧】</strong><br>
                                         ・<strong>-5.0%以下 【📉 割安】</strong> 底値仕込みが適切とされるゾーン（任意）<br>
                                         ・<strong>0.0%以下 【⚔️ 激戦】</strong> ブレイク前夜期待<br>
@@ -1223,7 +1223,7 @@ def show_main_page():
     # ==========================================
     with tab3:
         st.markdown("### 🔔 メール通知設定")
-        st.info("※テスト環境のため、実際のメールは送信されません。")
+        st.info("※設定したメールアドレス宛に、毎日の分析結果（該当銘柄がある場合のみ）が自動送信されます。")
         current_email = st.session_state.get("email_address", "")
         if current_email: st.success(f"現在、**{current_email}** の設定を呼び出し中です。")
             
