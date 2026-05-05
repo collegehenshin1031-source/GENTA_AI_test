@@ -1,14 +1,14 @@
 {
-  "updated_at": "2026-05-04 18:38:29",
-  "date": "2026-05-04",
+  "updated_at": "2026-05-05 18:28:53",
+  "date": "2026-05-05",
   "market_cap_range": "300億〜2000億円",
-  "total_count": 19,
-  "all_count": 888,
-  "filtered_count": 90,
+  "total_count": 21,
+  "all_count": 887,
+  "filtered_count": 94,
   "level_counts": {
-    "3": 1,
+    "3": 2,
     "2": 7,
-    "1": 10,
+    "1": 11,
     "0": 1
   },
   "data": {
@@ -37,7 +37,7 @@
         "range_compression": 0.0,
         "lower_shadow": 47.1
       },
-      "flow_streak_high": 2,
+      "flow_streak_high": 3,
       "reorg_score": 68.2,
       "event_score": 0.0,
       "display_state": "要監視",
@@ -48,7 +48,43 @@
         "下側ゾーン",
         "要監視",
         "出来高変化",
-        "継続2日"
+        "継続3日"
+      ]
+    },
+    "8276.T": {
+      "name": "平和堂",
+      "price": 2629.0,
+      "volume": 72900,
+      "avg_volume": 146730,
+      "vol_ratio": 0.5,
+      "shares_outstanding": 49454902,
+      "shares_outstanding_is_estimated": false,
+      "volume_of_shares_pct": 0.147,
+      "volume_of_shares_pct_is_estimated": false,
+      "price_change_5d": -1.65,
+      "market_cap_oku": 1300,
+      "pbr": 0.66,
+      "in_cap_range": true,
+      "level": 3,
+      "ma_score": 60.1,
+      "flow_score": 54.0,
+      "flow_details": {
+        "flow_score": 54.0,
+        "vol_anomaly": 0.0,
+        "price_stability": 98.5,
+        "absorption": 90.5,
+        "range_compression": 19.2,
+        "lower_shadow": 47.9
+      },
+      "flow_streak_high": 0,
+      "reorg_score": 89.4,
+      "event_score": 0.0,
+      "display_state": "観測中",
+      "support_price": 2815.5,
+      "support_upper": 3016.0,
+      "support_gap_pct": -6.6,
+      "tags": [
+        "下側ゾーン"
       ]
     },
     "4384.T": {
@@ -444,6 +480,42 @@
         "下側ゾーン"
       ]
     },
+    "8278.T": {
+      "name": "フジ",
+      "price": 2058.0,
+      "volume": 79400,
+      "avg_volume": 118024,
+      "vol_ratio": 0.67,
+      "shares_outstanding": 86646886,
+      "shares_outstanding_is_estimated": false,
+      "volume_of_shares_pct": 0.092,
+      "volume_of_shares_pct_is_estimated": false,
+      "price_change_5d": -3.29,
+      "market_cap_oku": 1783,
+      "pbr": 0.79,
+      "in_cap_range": true,
+      "level": 1,
+      "ma_score": 40.8,
+      "flow_score": 41.6,
+      "flow_details": {
+        "flow_score": 41.6,
+        "vol_anomaly": 0.0,
+        "price_stability": 94.2,
+        "absorption": 54.7,
+        "range_compression": 0.0,
+        "lower_shadow": 43.6
+      },
+      "flow_streak_high": 0,
+      "reorg_score": 55.3,
+      "event_score": 0.0,
+      "display_state": "観測中",
+      "support_price": 2042.1,
+      "support_upper": 2157.1,
+      "support_gap_pct": 0.8,
+      "tags": [
+        "下側ゾーン"
+      ]
+    },
     "3844.T": {
       "name": "コムチュア",
       "price": 1356.0,
@@ -724,7 +796,7 @@
         "range_compression": 0.0,
         "lower_shadow": 47.1
       },
-      "flow_streak_high": 2,
+      "flow_streak_high": 3,
       "reorg_score": 68.2,
       "event_score": 0.0,
       "display_state": "要監視",
@@ -735,7 +807,43 @@
         "下側ゾーン",
         "要監視",
         "出来高変化",
-        "継続2日"
+        "継続3日"
+      ]
+    },
+    "8276.T": {
+      "name": "平和堂",
+      "price": 2629.0,
+      "volume": 72900,
+      "avg_volume": 146730,
+      "vol_ratio": 0.5,
+      "shares_outstanding": 49454902,
+      "shares_outstanding_is_estimated": false,
+      "volume_of_shares_pct": 0.147,
+      "volume_of_shares_pct_is_estimated": false,
+      "price_change_5d": -1.65,
+      "market_cap_oku": 1300,
+      "pbr": 0.66,
+      "in_cap_range": true,
+      "level": 3,
+      "ma_score": 60.1,
+      "flow_score": 54.0,
+      "flow_details": {
+        "flow_score": 54.0,
+        "vol_anomaly": 0.0,
+        "price_stability": 98.5,
+        "absorption": 90.5,
+        "range_compression": 19.2,
+        "lower_shadow": 47.9
+      },
+      "flow_streak_high": 0,
+      "reorg_score": 89.4,
+      "event_score": 0.0,
+      "display_state": "観測中",
+      "support_price": 2815.5,
+      "support_upper": 3016.0,
+      "support_gap_pct": -6.6,
+      "tags": [
+        "下側ゾーン"
       ]
     },
     "4384.T": {
@@ -1094,39 +1202,41 @@
         "下側ゾーン"
       ]
     },
-    "9010.T": {
-      "name": "富士急行",
-      "price": 2287.0,
-      "volume": 118800,
-      "avg_volume": 185439,
-      "vol_ratio": 0.64,
-      "shares_outstanding": 53097995,
+    "8255.T": {
+      "name": "アクシアル リテイリング",
+      "price": 1115.0,
+      "volume": 83400,
+      "avg_volume": 123802,
+      "vol_ratio": 0.67,
+      "shares_outstanding": 88587488,
       "shares_outstanding_is_estimated": false,
-      "volume_of_shares_pct": 0.224,
+      "volume_of_shares_pct": 0.094,
       "volume_of_shares_pct_is_estimated": false,
-      "price_change_5d": 0.04,
-      "market_cap_oku": 1214,
-      "pbr": 3.02,
+      "price_change_5d": -1.85,
+      "market_cap_oku": 988,
+      "pbr": 1.06,
       "in_cap_range": true,
       "level": 1,
-      "ma_score": 44.4,
-      "flow_score": 31.5,
+      "ma_score": 43.9,
+      "flow_score": 27.7,
       "flow_details": {
-        "flow_score": 31.5,
+        "flow_score": 27.7,
         "vol_anomaly": 0.0,
-        "price_stability": 79.7,
-        "absorption": 20.2,
-        "range_compression": 8.3,
-        "lower_shadow": 57.2
+        "price_stability": 66.5,
+        "absorption": 14.7,
+        "range_compression": 15.9,
+        "lower_shadow": 58.0
       },
       "flow_streak_high": 0,
-      "reorg_score": 75.5,
+      "reorg_score": 78.6,
       "event_score": 0.0,
       "display_state": "観測中",
-      "support_price": 2047.5,
-      "support_upper": 2122.4,
-      "support_gap_pct": 11.7,
-      "tags": []
+      "support_price": 1109.6,
+      "support_upper": 1141.2,
+      "support_gap_pct": 0.5,
+      "tags": [
+        "下側ゾーン"
+      ]
     },
     "4478.T": {
       "name": "フリー",
@@ -1271,6 +1381,42 @@
         "下側ゾーン"
       ]
     },
+    "8278.T": {
+      "name": "フジ",
+      "price": 2058.0,
+      "volume": 79400,
+      "avg_volume": 118024,
+      "vol_ratio": 0.67,
+      "shares_outstanding": 86646886,
+      "shares_outstanding_is_estimated": false,
+      "volume_of_shares_pct": 0.092,
+      "volume_of_shares_pct_is_estimated": false,
+      "price_change_5d": -3.29,
+      "market_cap_oku": 1783,
+      "pbr": 0.79,
+      "in_cap_range": true,
+      "level": 1,
+      "ma_score": 40.8,
+      "flow_score": 41.6,
+      "flow_details": {
+        "flow_score": 41.6,
+        "vol_anomaly": 0.0,
+        "price_stability": 94.2,
+        "absorption": 54.7,
+        "range_compression": 0.0,
+        "lower_shadow": 43.6
+      },
+      "flow_streak_high": 0,
+      "reorg_score": 55.3,
+      "event_score": 0.0,
+      "display_state": "観測中",
+      "support_price": 2042.1,
+      "support_upper": 2157.1,
+      "support_gap_pct": 0.8,
+      "tags": [
+        "下側ゾーン"
+      ]
+    },
     "4549.T": {
       "name": "栄研化学",
       "price": 3060.0,
@@ -1355,7 +1501,7 @@
       "volume_of_shares_pct_is_estimated": false,
       "price_change_5d": -0.31,
       "market_cap_oku": 873,
-      "pbr": 1.41,
+      "pbr": 1.35,
       "in_cap_range": true,
       "level": 1,
       "ma_score": 40.6,
@@ -1879,6 +2025,40 @@
         "上側ゾーン"
       ]
     },
+    "8803.T": {
+      "name": "平和不動産",
+      "price": 2448.0,
+      "volume": 325800,
+      "avg_volume": 240137,
+      "vol_ratio": 1.36,
+      "shares_outstanding": 66395258,
+      "shares_outstanding_is_estimated": false,
+      "volume_of_shares_pct": 0.491,
+      "volume_of_shares_pct_is_estimated": false,
+      "price_change_5d": 1.41,
+      "market_cap_oku": 1625,
+      "pbr": 1.31,
+      "in_cap_range": true,
+      "level": 1,
+      "ma_score": 35.8,
+      "flow_score": 29.4,
+      "flow_details": {
+        "flow_score": 29.4,
+        "vol_anomaly": 0.0,
+        "price_stability": 75.2,
+        "absorption": 18.6,
+        "range_compression": 0.0,
+        "lower_shadow": 59.4
+      },
+      "flow_streak_high": 0,
+      "reorg_score": 56.5,
+      "event_score": 0.0,
+      "display_state": "観測中",
+      "support_price": 2140.0,
+      "support_upper": 2242.8,
+      "support_gap_pct": 14.4,
+      "tags": []
+    },
     "6908.T": {
       "name": "イリソ電子工業",
       "price": 3275.0,
@@ -1981,42 +2161,6 @@
       "support_price": 1512.8,
       "support_upper": 1568.8,
       "support_gap_pct": -22.9,
-      "tags": [
-        "下側ゾーン"
-      ]
-    },
-    "9052.T": {
-      "name": "山陽電気鉄道",
-      "price": 1967.0,
-      "volume": 17100,
-      "avg_volume": 33253,
-      "vol_ratio": 0.51,
-      "shares_outstanding": 22220061,
-      "shares_outstanding_is_estimated": false,
-      "volume_of_shares_pct": 0.077,
-      "volume_of_shares_pct_is_estimated": false,
-      "price_change_5d": 0.1,
-      "market_cap_oku": 437,
-      "pbr": 0.72,
-      "in_cap_range": true,
-      "level": 1,
-      "ma_score": 34.7,
-      "flow_score": 33.0,
-      "flow_details": {
-        "flow_score": 33.0,
-        "vol_anomaly": 0.0,
-        "price_stability": 88.9,
-        "absorption": 20.1,
-        "range_compression": 18.9,
-        "lower_shadow": 38.3
-      },
-      "flow_streak_high": 0,
-      "reorg_score": 49.7,
-      "event_score": 0.0,
-      "display_state": "観測中",
-      "support_price": 1995.5,
-      "support_upper": 2034.1,
-      "support_gap_pct": -1.4,
       "tags": [
         "下側ゾーン"
       ]
@@ -2231,6 +2375,42 @@
       "support_price": 1421.9,
       "support_upper": 1476.7,
       "support_gap_pct": 2.1,
+      "tags": [
+        "下側ゾーン"
+      ]
+    },
+    "8273.T": {
+      "name": "イズミ",
+      "price": 946.0,
+      "volume": 410000,
+      "avg_volume": 586739,
+      "vol_ratio": 0.7,
+      "shares_outstanding": 210098340,
+      "shares_outstanding_is_estimated": false,
+      "volume_of_shares_pct": 0.195,
+      "volume_of_shares_pct_is_estimated": false,
+      "price_change_5d": -2.57,
+      "market_cap_oku": 1988,
+      "pbr": 0.68,
+      "in_cap_range": true,
+      "level": 1,
+      "ma_score": 31.3,
+      "flow_score": 33.2,
+      "flow_details": {
+        "flow_score": 33.2,
+        "vol_anomaly": 0.0,
+        "price_stability": 77.0,
+        "absorption": 21.4,
+        "range_compression": 40.6,
+        "lower_shadow": 45.6
+      },
+      "flow_streak_high": 0,
+      "reorg_score": 40.8,
+      "event_score": 0.0,
+      "display_state": "観測中",
+      "support_price": 1017.4,
+      "support_upper": 1044.9,
+      "support_gap_pct": -7.0,
       "tags": [
         "下側ゾーン"
       ]
@@ -2593,16 +2773,16 @@
       "volume": 78100,
       "avg_volume": 41330,
       "vol_ratio": 1.89,
-      "shares_outstanding": 13417545,
+      "shares_outstanding": 13394245,
       "shares_outstanding_is_estimated": false,
-      "volume_of_shares_pct": 0.582,
+      "volume_of_shares_pct": 0.583,
       "volume_of_shares_pct_is_estimated": false,
       "price_change_5d": 8.71,
-      "market_cap_oku": 1507,
+      "market_cap_oku": 1504,
       "pbr": 3.47,
       "in_cap_range": true,
       "level": 0,
-      "ma_score": 28.5,
+      "ma_score": 28.6,
       "flow_score": 14.6,
       "flow_details": {
         "flow_score": 14.6,
@@ -2613,7 +2793,7 @@
         "lower_shadow": 74.2
       },
       "flow_streak_high": 0,
-      "reorg_score": 54.8,
+      "reorg_score": 55.0,
       "event_score": 0.0,
       "display_state": "観測中",
       "support_price": 5490.1,
@@ -2978,6 +3158,42 @@
       "support_price": 575.5,
       "support_upper": 631.4,
       "support_gap_pct": -5.7,
+      "tags": [
+        "下側ゾーン"
+      ]
+    },
+    "8285.T": {
+      "name": "三谷産業",
+      "price": 685.0,
+      "volume": 106200,
+      "avg_volume": 106547,
+      "vol_ratio": 1.0,
+      "shares_outstanding": 61570377,
+      "shares_outstanding_is_estimated": false,
+      "volume_of_shares_pct": 0.172,
+      "volume_of_shares_pct_is_estimated": false,
+      "price_change_5d": -12.74,
+      "market_cap_oku": 422,
+      "pbr": 0.74,
+      "in_cap_range": true,
+      "level": 0,
+      "ma_score": 25.2,
+      "flow_score": 12.9,
+      "flow_details": {
+        "flow_score": 12.9,
+        "vol_anomaly": 20.4,
+        "price_stability": 0.0,
+        "absorption": 3.3,
+        "range_compression": 0.0,
+        "lower_shadow": 59.4
+      },
+      "flow_streak_high": 0,
+      "reorg_score": 48.6,
+      "event_score": 0.0,
+      "display_state": "観測中",
+      "support_price": 694.6,
+      "support_upper": 722.9,
+      "support_gap_pct": -1.4,
       "tags": [
         "下側ゾーン"
       ]
