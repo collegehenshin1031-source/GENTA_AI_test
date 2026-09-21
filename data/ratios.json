@@ -1,6 +1,6 @@
 {
-  "updated_at": "2026-09-18 21:20:08",
-  "date": "2026-09-18",
+  "updated_at": "2026-09-21 23:28:45",
+  "date": "2026-09-21",
   "market_cap_range": "300億〜2000億円",
   "total_count": 56,
   "all_count": 871,
@@ -762,7 +762,7 @@
       "volume_of_shares_pct_is_estimated": false,
       "price_change_5d": 2.82,
       "market_cap_oku": 740,
-      "pbr": 5.84,
+      "pbr": 6.31,
       "in_cap_range": true,
       "level": 2,
       "ma_score": 45.6,
@@ -1060,7 +1060,7 @@
         "range_compression": 97.3,
         "lower_shadow": 20.0
       },
-      "flow_streak_high": 3,
+      "flow_streak_high": 4,
       "reorg_score": 19.9,
       "event_score": 0.0,
       "display_state": "観測中",
@@ -1069,7 +1069,7 @@
       "support_gap_pct": 0.2,
       "tags": [
         "下側ゾーン",
-        "継続3日"
+        "継続4日"
       ]
     },
     "4431.T": {
@@ -3315,7 +3315,7 @@
       "volume_of_shares_pct_is_estimated": false,
       "price_change_5d": 1.31,
       "market_cap_oku": 1001,
-      "pbr": 0.82,
+      "pbr": 0.64,
       "in_cap_range": true,
       "level": 2,
       "ma_score": 47.0,
@@ -3711,7 +3711,7 @@
       "volume_of_shares_pct_is_estimated": false,
       "price_change_5d": 2.82,
       "market_cap_oku": 740,
-      "pbr": 5.84,
+      "pbr": 6.31,
       "in_cap_range": true,
       "level": 2,
       "ma_score": 45.6,
@@ -4753,7 +4753,7 @@
         "range_compression": 97.3,
         "lower_shadow": 20.0
       },
-      "flow_streak_high": 3,
+      "flow_streak_high": 4,
       "reorg_score": 19.9,
       "event_score": 0.0,
       "display_state": "観測中",
@@ -4762,7 +4762,7 @@
       "support_gap_pct": 0.2,
       "tags": [
         "下側ゾーン",
-        "継続3日"
+        "継続4日"
       ]
     },
     "4431.T": {
@@ -7615,42 +7615,6 @@
       "support_gap_pct": 12.1,
       "tags": []
     },
-    "8131.T": {
-      "name": "ミツウロコグループホールディングス",
-      "price": 2472.0,
-      "volume": 165500,
-      "avg_volume": 47933,
-      "vol_ratio": 3.45,
-      "shares_outstanding": 54644872,
-      "shares_outstanding_is_estimated": false,
-      "volume_of_shares_pct": 0.303,
-      "volume_of_shares_pct_is_estimated": false,
-      "price_change_5d": -1.4,
-      "market_cap_oku": 1351,
-      "pbr": 1.28,
-      "in_cap_range": true,
-      "level": 1,
-      "ma_score": 35.4,
-      "flow_score": 11.2,
-      "flow_details": {
-        "flow_score": 11.2,
-        "vol_anomaly": 11.7,
-        "price_stability": 9.6,
-        "absorption": 8.0,
-        "range_compression": 0.0,
-        "lower_shadow": 32.9
-      },
-      "flow_streak_high": 0,
-      "reorg_score": 75.8,
-      "event_score": 0.0,
-      "display_state": "観測中",
-      "support_price": 2036.7,
-      "support_upper": 2164.8,
-      "support_gap_pct": 21.4,
-      "tags": [
-        "上側ゾーン"
-      ]
-    },
     "9619.T": {
       "name": "イチネンホールディングス",
       "price": 2742.0,
@@ -7683,6 +7647,42 @@
       "support_price": 2111.2,
       "support_upper": 2176.4,
       "support_gap_pct": 29.9,
+      "tags": [
+        "上側ゾーン"
+      ]
+    },
+    "8131.T": {
+      "name": "ミツウロコグループホールディングス",
+      "price": 2472.0,
+      "volume": 165500,
+      "avg_volume": 47933,
+      "vol_ratio": 3.45,
+      "shares_outstanding": 54711422,
+      "shares_outstanding_is_estimated": false,
+      "volume_of_shares_pct": 0.302,
+      "volume_of_shares_pct_is_estimated": false,
+      "price_change_5d": -1.4,
+      "market_cap_oku": 1352,
+      "pbr": 1.28,
+      "in_cap_range": true,
+      "level": 1,
+      "ma_score": 35.3,
+      "flow_score": 11.2,
+      "flow_details": {
+        "flow_score": 11.2,
+        "vol_anomaly": 11.7,
+        "price_stability": 9.6,
+        "absorption": 8.0,
+        "range_compression": 0.0,
+        "lower_shadow": 32.9
+      },
+      "flow_streak_high": 0,
+      "reorg_score": 75.7,
+      "event_score": 0.0,
+      "display_state": "観測中",
+      "support_price": 2036.7,
+      "support_upper": 2164.8,
+      "support_gap_pct": 21.4,
       "tags": [
         "上側ゾーン"
       ]
@@ -11611,7 +11611,7 @@
       "volume": 62200,
       "avg_volume": 115981,
       "vol_ratio": 0.54,
-      "shares_outstanding": 34452352,
+      "shares_outstanding": 34454352,
       "shares_outstanding_is_estimated": false,
       "volume_of_shares_pct": 0.181,
       "volume_of_shares_pct_is_estimated": false,
