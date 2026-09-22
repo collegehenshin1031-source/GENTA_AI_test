@@ -1,6 +1,6 @@
 {
-  "updated_at": "2026-09-21 23:28:45",
-  "date": "2026-09-21",
+  "updated_at": "2026-09-22 21:47:11",
+  "date": "2026-09-22",
   "market_cap_range": "300億〜2000億円",
   "total_count": 56,
   "all_count": 871,
@@ -1060,7 +1060,7 @@
         "range_compression": 97.3,
         "lower_shadow": 20.0
       },
-      "flow_streak_high": 4,
+      "flow_streak_high": 5,
       "reorg_score": 19.9,
       "event_score": 0.0,
       "display_state": "観測中",
@@ -1069,7 +1069,7 @@
       "support_gap_pct": 0.2,
       "tags": [
         "下側ゾーン",
-        "継続4日"
+        "継続5日"
       ]
     },
     "4431.T": {
@@ -4753,7 +4753,7 @@
         "range_compression": 97.3,
         "lower_shadow": 20.0
       },
-      "flow_streak_high": 4,
+      "flow_streak_high": 5,
       "reorg_score": 19.9,
       "event_score": 0.0,
       "display_state": "観測中",
@@ -4762,7 +4762,7 @@
       "support_gap_pct": 0.2,
       "tags": [
         "下側ゾーン",
-        "継続4日"
+        "継続5日"
       ]
     },
     "4431.T": {
@@ -5592,7 +5592,7 @@
       "volume_of_shares_pct_is_estimated": false,
       "price_change_5d": -2.68,
       "market_cap_oku": 1257,
-      "pbr": 1.93,
+      "pbr": 1.94,
       "in_cap_range": true,
       "level": 1,
       "ma_score": 40.4,
@@ -9601,7 +9601,7 @@
       "volume_of_shares_pct_is_estimated": false,
       "price_change_5d": 6.53,
       "market_cap_oku": 564,
-      "pbr": 1.08,
+      "pbr": 1.09,
       "in_cap_range": true,
       "level": 1,
       "ma_score": 30.4,
